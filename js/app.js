@@ -411,12 +411,17 @@
 
   function setTool(next) {
     tool = next;
-    if (tool !== "connect") connectSource = null;
+    const isConnectionTool = tool === "connect" || tool === "secret-connect";
+    if (!isConnectionTool) connectSource = null;
     $$("[data-tool]").forEach((btn) =>
       btn.classList.toggle("is-active", btn.dataset.tool === tool),
     );
     elements.viewport.classList.toggle("is-hand", tool === "hand");
-    elements.viewport.classList.toggle("is-connecting", tool === "connect");
+    elements.viewport.classList.toggle("is-connecting", isConnectionTool);
+    elements.viewport.classList.toggle(
+      "is-secret-connecting",
+      tool === "secret-connect",
+    );
     renderBoard();
   }
 
@@ -698,11 +703,12 @@
           selected?.type === "connection" && selected.id === connection.id
             ? " is-selected"
             : "";
+        const secretClass = connection.secret === true ? " is-secret" : "";
         const labelWidth = Math.min(
           200,
           34 + String(connection.label || "").length * 11,
         );
-        return `<g data-connection-id="${esc(connection.id)}"><line class="connection-hit" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${selectedClass}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg" x="${mx - labelWidth / 2}" y="${my - 13}" width="${labelWidth}" height="26" rx="8"/><text class="connection-label" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
+        return `<g data-connection-id="${esc(connection.id)}"><line class="connection-hit" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg${secretClass}" x="${mx - labelWidth / 2}" y="${my - 13}" width="${labelWidth}" height="26" rx="8"/><text class="connection-label${secretClass}" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
       })
       .join("");
   }
@@ -799,8 +805,17 @@
         return;
       }
       const editable = canDeleteConnection(connection);
+      const isSecretConnection = connection.secret === true;
+      const connectionKicker = isSecretConnection
+        ? `<p class="panel-kicker blue-kicker">SECRET CONNECTION</p>`
+        : `<p class="panel-kicker red-kicker">RED CONNECTION</p>`;
+      const privacyControl = editable
+        ? `<div class="panel-row"><label>공개 범위</label><label class="panel-secret-toggle connection-secret-toggle"><input id="connectionSecretInput" type="checkbox" ${isSecretConnection ? "checked" : ""}><span><strong>비밀 연결선</strong><small>체크하면 작성자와 SYSTEAM에게만 선과 문구가 보입니다.</small></span></label></div>`
+        : isSecretConnection && session?.accountId === "SYSTEAM"
+          ? `<div class="panel-tip panel-tip--secret">🔒 ${esc(connection.authorName || "")}의 비밀 연결선입니다. SYSTEAM은 모든 비밀 연결선을 볼 수 있습니다.</div>`
+          : "";
       elements.selectionPanel.classList.remove("is-hidden");
-      elements.selectionPanel.innerHTML = `<p class="panel-kicker red-kicker">RED CONNECTION</p><h3>실마리 연결선</h3><div class="panel-row"><label>연결 설명</label><input id="connectionLabelInput" value="${esc(connection.label || "")}" maxlength="60" placeholder="예: 동일 인물, 시간대 일치" ${editable ? "" : "disabled"}></div><div class="connection-author">${esc(connection.authorName || "")}</div>${editable ? `<div class="panel-actions"><button class="small-primary" data-action="save-connection">저장</button><button class="small-danger" data-action="delete-selected">삭제</button></div>` : ""}`;
+      elements.selectionPanel.innerHTML = `${connectionKicker}<h3>${isSecretConnection ? "비밀 실마리 연결선" : "실마리 연결선"}</h3><div class="panel-row"><label>연결 설명</label><input id="connectionLabelInput" value="${esc(connection.label || "")}" maxlength="60" placeholder="예: 동일 인물, 시간대 일치" ${editable ? "" : "disabled"}></div>${privacyControl}<div class="connection-author">${esc(connection.authorName || "")}</div>${editable ? `<div class="panel-actions"><button class="small-primary" data-action="save-connection">저장</button><button class="small-danger" data-action="delete-selected">삭제</button></div>` : ""}`;
       return;
     }
 
@@ -943,7 +958,7 @@
 
   function openHelpModal() {
     openModal(
-      `<h2>사용 방법</h2><div class="help-list"><p><strong>선택:</strong> 빈 공간을 드래그하면 드래그 범위 안의 항목을 한꺼번에 선택합니다. Shift를 누르면 기존 선택에 추가할 수 있습니다.</p><p><strong>이동:</strong> 항목을 드래그하면 부드럽게 이동합니다. 여러 항목을 선택한 뒤 하나를 드래그하면 함께 이동합니다.</p><p><strong>사진 크기:</strong> 사진 자료/사진 스티커 선택 후 오른쪽 아래 핸들을 드래그하면 원본 비율을 유지하며 확대·축소됩니다.</p><p><strong>비밀글:</strong> HO1·HO2는 등록할 때 비밀글을 선택할 수 있습니다. 비밀글은 작성자 본인과 SYSTEAM에게만 보이며, 작성자가 비밀글을 해제하면 다른 플레이어에게도 공개됩니다.</p><p><strong>붉은 선:</strong> 왼쪽 ╱ 도구를 선택하고 두 항목을 차례로 클릭합니다.</p><p><strong>보드 이동:</strong> H로 손 도구를 선택하거나 Space를 누른 채 드래그합니다. 마우스 휠(가운데 버튼)을 누른 채 드래그해도 바로 손 도구처럼 이동합니다.</p><p><strong>확대/축소:</strong> Ctrl/⌘ + 휠 또는 오른쪽 아래 확대 버튼을 사용합니다.</p></div><div class="form-actions"><button class="submit-btn" data-close-modal type="button">확인</button></div>`,
+      `<h2>사용 방법</h2><div class="help-list"><p><strong>선택:</strong> 빈 공간을 드래그하면 드래그 범위 안의 항목을 한꺼번에 선택합니다. Shift를 누르면 기존 선택에 추가할 수 있습니다.</p><p><strong>이동:</strong> 항목을 드래그하면 부드럽게 이동합니다. 여러 항목을 선택한 뒤 하나를 드래그하면 함께 이동합니다.</p><p><strong>사진 크기:</strong> 사진 자료/사진 스티커 선택 후 오른쪽 아래 핸들을 드래그하면 원본 비율을 유지하며 확대·축소됩니다.</p><p><strong>비밀글:</strong> HO1·HO2는 등록할 때 비밀글을 선택할 수 있습니다. 비밀글은 작성자 본인과 SYSTEAM에게만 보이며, 작성자가 비밀글을 해제하면 다른 플레이어에게도 공개됩니다.</p><p><strong>붉은 선:</strong> 왼쪽 붉은 ╱ 도구를 선택하고 두 항목을 차례로 클릭합니다. 모두에게 공개됩니다.</p><p><strong>푸른 비밀선:</strong> 왼쪽 푸른 ╱ 도구를 선택하고 두 항목을 차례로 클릭합니다. 작성자와 SYSTEAM에게만 선과 문구가 보입니다.</p><p><strong>연결선 삭제:</strong> 연결선을 클릭해 선택한 뒤 오른쪽 패널의 삭제 버튼이나 Delete 키를 사용합니다.</p><p><strong>보드 이동:</strong> H로 손 도구를 선택하거나 Space를 누른 채 드래그합니다. 마우스 휠(가운데 버튼)을 누른 채 드래그해도 바로 손 도구처럼 이동합니다.</p><p><strong>확대/축소:</strong> Ctrl/⌘ + 휠 또는 오른쪽 아래 확대 버튼을 사용합니다.</p></div><div class="form-actions"><button class="submit-btn" data-close-modal type="button">확인</button></div>`,
     );
   }
 
@@ -1305,7 +1320,11 @@
       const connection = state.connections.find(
         (item) => item.id === selected.id,
       );
-      if (!connection || !canDeleteConnection(connection)) return;
+      if (!connection) return;
+      if (!canDeleteConnection(connection)) {
+        showToast("이 연결선은 작성자만 삭제할 수 있습니다.");
+        return;
+      }
       snapshot();
       state.connections = state.connections.filter(
         (item) => item.id !== connection.id,
@@ -1373,7 +1392,7 @@
     await saveState();
   }
 
-  function createConnection(fromId, toId) {
+  function createConnection(fromId, toId, { secret = false } = {}) {
     if (fromId === toId) return;
     const existing = state.connections.find(
       (connection) =>
@@ -1385,7 +1404,9 @@
       selected = { type: "connection", id: existing.id };
       connectSource = null;
       setTool("select");
-      showToast("이미 붉은 선으로 연결된 항목입니다.");
+      showToast(
+        "이미 연결된 항목입니다. 오른쪽 패널에서 공개 범위를 변경할 수 있습니다.",
+      );
       return;
     }
 
@@ -1395,22 +1416,19 @@
       from: fromId,
       to: toId,
       label: "",
+      secret: Boolean(secret),
       authorId: session.accountId,
       authorName: session.name,
       authorRole: session.role,
       createdAt: nowIso(),
       updatedAt: nowIso(),
-      color: "red",
+      color: secret ? "blue" : "red",
     };
     state.connections.push(connection);
     selectedIds.clear();
     selected = { type: "connection", id: connection.id };
     connectSource = null;
-    tool = "select";
-    $$("[data-tool]").forEach((btn) =>
-      btn.classList.toggle("is-active", btn.dataset.tool === "select"),
-    );
-    elements.viewport.classList.remove("is-connecting");
+    setTool("select");
     saveState();
   }
 
@@ -1875,9 +1893,10 @@
       return;
     }
 
-    const resizeHandle = event.target.closest("[data-resize-item]");
-    const itemElement = event.target.closest("[data-item-id]");
-    const connectionElement = event.target.closest("[data-connection-id]");
+    const target = event.target instanceof Element ? event.target : null;
+    const resizeHandle = target?.closest("[data-resize-item]") || null;
+    const itemElement = target?.closest("[data-item-id]") || null;
+    const connectionElement = target?.closest("[data-connection-id]") || null;
 
     if (event.button === 1) {
       event.preventDefault();
@@ -1947,15 +1966,20 @@
     const item = state.items.find((entry) => entry.id === id);
     if (!item) return;
 
-    if (tool === "connect") {
+    if (tool === "connect" || tool === "secret-connect") {
+      const secretConnection = tool === "secret-connect";
       if (!connectSource) {
         connectSource = id;
         selectedIds = new Set([id]);
         selected = { type: "item", id };
-        showToast("붉은 선으로 연결할 두 번째 항목을 선택하세요.");
+        showToast(
+          secretConnection
+            ? "푸른 비밀선으로 연결할 두 번째 항목을 선택하세요."
+            : "붉은 선으로 연결할 두 번째 항목을 선택하세요.",
+        );
         renderBoard();
       } else {
-        createConnection(connectSource, id);
+        createConnection(connectSource, id, { secret: secretConnection });
       }
       return;
     }
@@ -2107,6 +2131,10 @@
       if (!connection || !canDeleteConnection(connection)) return;
       snapshot();
       connection.label = $("#connectionLabelInput").value.trim();
+      if ($("#connectionSecretInput")) {
+        connection.secret = $("#connectionSecretInput").checked;
+        connection.color = connection.secret ? "blue" : "red";
+      }
       connection.updatedAt = nowIso();
       saveState();
     }
@@ -2124,6 +2152,7 @@
     if (event.key === "v" || event.key === "V") setTool("select");
     if (event.key === "h" || event.key === "H") setTool("hand");
     if (event.key === "c" || event.key === "C") setTool("connect");
+    if (event.key === "b" || event.key === "B") setTool("secret-connect");
     if (event.key === "Delete" || event.key === "Backspace") deleteSelected();
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
