@@ -288,6 +288,27 @@ button {
   pointer-events: none;
 }
 
+.item-secret-badge {
+  position: absolute;
+  z-index: 13;
+  top: -12px;
+  left: -10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #34312d;
+  border-radius: 999px;
+  background: rgba(37, 36, 33, 0.96);
+  box-shadow: 0 4px 12px rgba(42, 38, 31, 0.18);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
 .board-item.is-locked.is-selected::after {
   border-style: dashed;
 }
@@ -642,6 +663,45 @@ button {
 .form-field select:focus {
   border-color: #7770cb;
   box-shadow: 0 0 0 3px rgba(109, 99, 217, 0.12);
+}
+.secret-form-field {
+  margin-top: 2px;
+}
+.secret-toggle,
+.panel-secret-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #d9d4cc;
+  border-radius: 9px;
+  background: #f7f4ee;
+  cursor: pointer;
+}
+.secret-toggle input,
+.panel-secret-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #252421;
+  flex: 0 0 auto;
+}
+.secret-toggle span,
+.panel-secret-toggle span {
+  display: grid;
+  gap: 3px;
+}
+.secret-toggle strong,
+.panel-secret-toggle strong {
+  font-size: 12px;
+}
+.secret-toggle small,
+.panel-secret-toggle small {
+  color: #777168;
+  font-size: 10px;
+  line-height: 1.45;
+  font-weight: 500;
 }
 .form-actions {
   display: flex;
@@ -1240,6 +1300,11 @@ button {
   color: #6d665e;
   font-size: 10px;
   line-height: 1.5;
+}
+.panel-tip--secret {
+  border: 1px solid #ded8ce;
+  background: #ebe7df;
+  color: #383530;
 }
 
 .account-row {

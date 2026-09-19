@@ -634,17 +634,20 @@
       item.locked && isLockableImage(item)
         ? `<span class="item-lock-badge" title="관리자가 고정한 이미지" aria-label="잠긴 이미지">🔒</span>`
         : "";
+    const secretBadge = item.secret
+      ? `<span class="item-secret-badge" title="작성자와 SYSTEAM만 볼 수 있는 비밀글" aria-label="비밀글">🔒 비밀</span>`
+      : "";
 
     if (item.type === "note") {
-      return `<article class="board-item board-item--note${selectedClass}${connectClass}${lockedClass}${immovableClass}" data-item-id="${esc(item.id)}" style="${style}"><div class="item-card note-card" style="--note-color:${esc(item.color || NOTE_COLORS[0])}"><p class="note-text">${esc(item.body)}</p><div class="note-author">${esc(item.authorName)}</div></div>${noteResizeHandles}</article>`;
+      return `<article class="board-item board-item--note${selectedClass}${connectClass}${lockedClass}${immovableClass}" data-item-id="${esc(item.id)}" style="${style}">${secretBadge}<div class="item-card note-card" style="--note-color:${esc(item.color || NOTE_COLORS[0])}"><p class="note-text">${esc(item.body)}</p><div class="note-author">${esc(item.authorName)}</div></div>${noteResizeHandles}</article>`;
     }
 
     if (item.type === "sticker") {
-      return `<article class="board-item${selectedClass}${connectClass}${lockedClass}${immovableClass}" data-item-id="${esc(item.id)}" style="${style}"><div class="item-card sticker-card"><div class="sticker-emoji">${esc(item.emoji || "📌")}</div>${item.body ? `<div class="sticker-caption">${esc(item.body)}</div>` : ""}</div></article>`;
+      return `<article class="board-item${selectedClass}${connectClass}${lockedClass}${immovableClass}" data-item-id="${esc(item.id)}" style="${style}">${secretBadge}<div class="item-card sticker-card"><div class="sticker-emoji">${esc(item.emoji || "📌")}</div>${item.body ? `<div class="sticker-caption">${esc(item.body)}</div>` : ""}</div></article>`;
     }
 
     if (item.type === "photoSticker") {
-      return `<article class="board-item board-item--auto${selectedClass}${connectClass}${lockedClass}${immovableClass}" data-item-id="${esc(item.id)}" style="${style}">${lockBadge}<div class="item-card photo-sticker-card"><img class="photo-sticker-image" src="${esc(cachedAttachmentUrl(item))}" data-attachment-id="${esc(item.attachmentId || "")}" data-attachment-path="${esc(item.attachmentPath || "")}" alt="${esc(item.attachmentName || "사진 스티커")}" draggable="false" />${item.body ? `<div class="photo-sticker-caption">${esc(item.body)}</div>` : ""}<div class="photo-sticker-pin" aria-hidden="true"></div></div>${resizeHandle}</article>`;
+      return `<article class="board-item board-item--auto${selectedClass}${connectClass}${lockedClass}${immovableClass}" data-item-id="${esc(item.id)}" style="${style}">${secretBadge}${lockBadge}<div class="item-card photo-sticker-card"><img class="photo-sticker-image" src="${esc(cachedAttachmentUrl(item))}" data-attachment-id="${esc(item.attachmentId || "")}" data-attachment-path="${esc(item.attachmentPath || "")}" alt="${esc(item.attachmentName || "사진 스티커")}" draggable="false" />${item.body ? `<div class="photo-sticker-caption">${esc(item.body)}</div>` : ""}<div class="photo-sticker-pin" aria-hidden="true"></div></div>${resizeHandle}</article>`;
     }
 
     const official = item.type === "official";
@@ -660,7 +663,7 @@
       ? `<button type="button" class="attachment-chip" data-download-attachment="${esc(item.attachmentId || "")}" data-download-path="${esc(item.attachmentPath || "")}">📎 ${esc(item.attachmentName || "첨부 파일")}</button>`
       : "";
 
-    return `<article class="board-item board-item--auto${selectedClass}${connectClass}${lockedClass}${immovableClass}" data-item-id="${esc(item.id)}" style="${style}">${lockBadge}<div class="item-card evidence-card${official ? " official-card" : ""}">${media}<div class="evidence-info"><div class="evidence-kind"><span>${official ? "관리자 공개 정보" : "조사 자료"}</span><span>${item.attachmentName ? "첨부" : ""}</span></div><h3 class="evidence-title">${esc(item.title || "제목 없음")}</h3>${item.body ? `<div class="evidence-body">${esc(item.body)}</div>` : ""}${fileButton}<div class="author-line">${esc(item.authorName)} · ${formatTime(item.createdAt)}</div></div></div>${resizeHandle}</article>`;
+    return `<article class="board-item board-item--auto${selectedClass}${connectClass}${lockedClass}${immovableClass}" data-item-id="${esc(item.id)}" style="${style}">${secretBadge}${lockBadge}<div class="item-card evidence-card${official ? " official-card" : ""}">${media}<div class="evidence-info"><div class="evidence-kind"><span>${official ? "관리자 공개 정보" : "조사 자료"}</span><span>${item.attachmentName ? "첨부" : ""}</span></div><h3 class="evidence-title">${esc(item.title || "제목 없음")}</h3>${item.body ? `<div class="evidence-body">${esc(item.body)}</div>` : ""}${fileButton}<div class="author-line">${esc(item.authorName)} · ${formatTime(item.createdAt)}</div></div></div>${resizeHandle}</article>`;
   }
 
   function itemGeometry(item) {
@@ -855,6 +858,12 @@
       : !isOwnItem(item) && session?.role !== "admin"
         ? `<div class="panel-tip">다른 참여자의 항목입니다. 위치 이동만 가능합니다.</div>`
         : "";
+    const secretControl =
+      isOwnItem(item) && canUseSecretPosts()
+        ? `<div class="panel-row"><label>공개 범위</label><label class="panel-secret-toggle"><input id="editSecret" type="checkbox" ${item.secret ? "checked" : ""}><span><strong>비밀글</strong><small>체크하면 나와 SYSTEAM에게만 보입니다.</small></span></label></div>`
+        : item.secret && session?.accountId === "SYSTEAM"
+          ? `<div class="panel-tip panel-tip--secret">🔒 ${esc(item.authorName)}의 비밀글입니다. SYSTEAM은 비밀글 여부와 관계없이 볼 수 있습니다.</div>`
+          : "";
     const lockAction =
       session?.role === "admin" && lockable
         ? `<button class="small-lock" data-action="toggle-lock">${item.locked ? "잠금 해제" : "이미지 잠금"}</button>`
@@ -871,7 +880,7 @@
         : "";
 
     elements.selectionPanel.classList.remove("is-hidden");
-    elements.selectionPanel.innerHTML = `<p class="panel-kicker">${esc(typeLabel)}</p><h3>${esc(previewTitle)}</h3>${titleField}${bodyField}<div class="panel-row"><label>작성자</label><input value="${esc(item.authorName)}" disabled></div>${moveHelp}${resizeHelp}${actions}`;
+    elements.selectionPanel.innerHTML = `<p class="panel-kicker">${esc(typeLabel)}</p><h3>${esc(previewTitle)}</h3>${titleField}${bodyField}<div class="panel-row"><label>작성자</label><input value="${esc(item.authorName)}" disabled></div>${secretControl}${moveHelp}${resizeHelp}${actions}`;
   }
 
   function showToast(message) {
@@ -898,34 +907,43 @@
     elements.modal.innerHTML = "";
   }
 
+  function canUseSecretPosts() {
+    return ["HO1", "HO2"].includes(session?.accountId);
+  }
+
+  function secretFieldMarkup() {
+    if (!canUseSecretPosts()) return "";
+    return `<div class="form-field secret-form-field"><label class="secret-toggle"><input name="secret" type="checkbox" value="1"><span><strong>비밀글로 등록</strong><small>작성자 본인과 SYSTEAM만 볼 수 있습니다. 비밀글을 해제하면 다른 플레이어에게도 공개됩니다.</small></span></label></div>`;
+  }
+
   function openEvidenceModal({ official = false } = {}) {
     if (official && session.role !== "admin") return;
     openModal(
-      `<h2>${official ? "관리자 공개 정보" : "조사 자료"} 추가</h2><p class="modal-lead">사진을 올리면 원본 비율을 유지한 사진이 카드의 중심으로 표시되고, 제목·설명·작성자 정보는 사진 아래에 표시됩니다.</p><form id="evidenceForm" class="form-stack"><input type="hidden" name="official" value="${official ? "1" : "0"}"><div class="form-field"><label>자료 제목</label><input name="title" maxlength="80" required placeholder="예: CCTV 캡처 22:14"></div><div class="form-field"><label>사진 / 자료 파일</label><input name="file" type="file" accept="image/*,.pdf,.txt,.md,.doc,.docx"></div><div class="form-field"><label>하단 정보글</label><textarea name="body" maxlength="1200" placeholder="발견 장소, 시간, 특징, 추측 등을 적으세요."></textarea></div><div class="form-actions"><button class="cancel-btn" type="button" data-close-modal>취소</button><button class="submit-btn" type="submit">자료 올리기</button></div></form>`,
+      `<h2>${official ? "관리자 공개 정보" : "조사 자료"} 추가</h2><p class="modal-lead">사진을 올리면 원본 비율을 유지한 사진이 카드의 중심으로 표시되고, 제목·설명·작성자 정보는 사진 아래에 표시됩니다.</p><form id="evidenceForm" class="form-stack"><input type="hidden" name="official" value="${official ? "1" : "0"}"><div class="form-field"><label>자료 제목</label><input name="title" maxlength="80" required placeholder="예: CCTV 캡처 22:14"></div><div class="form-field"><label>사진 / 자료 파일</label><input name="file" type="file" accept="image/*,.pdf,.txt,.md,.doc,.docx"></div><div class="form-field"><label>하단 정보글</label><textarea name="body" maxlength="1200" placeholder="발견 장소, 시간, 특징, 추측 등을 적으세요."></textarea></div>${official ? "" : secretFieldMarkup()}<div class="form-actions"><button class="cancel-btn" type="button" data-close-modal>취소</button><button class="submit-btn" type="submit">자료 올리기</button></div></form>`,
     );
   }
 
   function openNoteModal() {
     openModal(
-      `<h2>포스트잇 붙이기</h2><p class="modal-lead">사진이나 사건 자료 옆에 추측, 질문, 확인할 내용을 적어 붙일 수 있습니다.</p><form id="noteForm" class="form-stack"><div class="form-field"><label>메모 내용</label><textarea name="body" maxlength="500" required placeholder="예: 이 사진의 시각과 출입 기록 시간이 맞지 않음"></textarea></div><div class="form-field"><label>포스트잇 색상</label><div class="color-grid">${NOTE_COLORS.map((color, index) => `<button type="button" class="color-swatch ${index === 0 ? "is-selected" : ""}" data-note-color="${color}" style="background:${color}" aria-label="색상 선택"></button>`).join("")}</div><input type="hidden" name="color" value="${NOTE_COLORS[0]}"></div><div class="form-actions"><button class="cancel-btn" type="button" data-close-modal>취소</button><button class="submit-btn" type="submit">붙이기</button></div></form>`,
+      `<h2>포스트잇 붙이기</h2><p class="modal-lead">사진이나 사건 자료 옆에 추측, 질문, 확인할 내용을 적어 붙일 수 있습니다.</p><form id="noteForm" class="form-stack"><div class="form-field"><label>메모 내용</label><textarea name="body" maxlength="500" required placeholder="예: 이 사진의 시각과 출입 기록 시간이 맞지 않음"></textarea></div><div class="form-field"><label>포스트잇 색상</label><div class="color-grid">${NOTE_COLORS.map((color, index) => `<button type="button" class="color-swatch ${index === 0 ? "is-selected" : ""}" data-note-color="${color}" style="background:${color}" aria-label="색상 선택"></button>`).join("")}</div><input type="hidden" name="color" value="${NOTE_COLORS[0]}"></div>${secretFieldMarkup()}<div class="form-actions"><button class="cancel-btn" type="button" data-close-modal>취소</button><button class="submit-btn" type="submit">붙이기</button></div></form>`,
     );
   }
 
   function openStickerModal() {
     openModal(
-      `<h2>기호 스티커 붙이기</h2><p class="modal-lead">중요, 의문, 확인 완료 같은 표시를 사건 보드 위에 남깁니다.</p><form id="stickerForm" class="form-stack"><div class="form-field"><label>스티커</label><div class="sticker-grid">${STICKERS.map((sticker, index) => `<button type="button" class="sticker-choice ${index === 0 ? "is-selected" : ""}" data-sticker="${sticker}">${sticker}</button>`).join("")}</div><input type="hidden" name="emoji" value="${STICKERS[0]}"></div><div class="form-field"><label>짧은 문구 (선택)</label><input name="body" maxlength="30" placeholder="예: 중요, 재확인"></div><div class="form-actions"><button class="cancel-btn" type="button" data-close-modal>취소</button><button class="submit-btn" type="submit">붙이기</button></div></form>`,
+      `<h2>기호 스티커 붙이기</h2><p class="modal-lead">중요, 의문, 확인 완료 같은 표시를 사건 보드 위에 남깁니다.</p><form id="stickerForm" class="form-stack"><div class="form-field"><label>스티커</label><div class="sticker-grid">${STICKERS.map((sticker, index) => `<button type="button" class="sticker-choice ${index === 0 ? "is-selected" : ""}" data-sticker="${sticker}">${sticker}</button>`).join("")}</div><input type="hidden" name="emoji" value="${STICKERS[0]}"></div><div class="form-field"><label>짧은 문구 (선택)</label><input name="body" maxlength="30" placeholder="예: 중요, 재확인"></div>${secretFieldMarkup()}<div class="form-actions"><button class="cancel-btn" type="button" data-close-modal>취소</button><button class="submit-btn" type="submit">붙이기</button></div></form>`,
     );
   }
 
   function openPhotoStickerModal() {
     openModal(
-      `<h2>사진 스티커 붙이기</h2><p class="modal-lead">사용자가 직접 올린 사진을 독립된 사진 조각처럼 붙입니다. 사진 비율은 유지되며 선택 후 오른쪽 아래 핸들로 크기를 조절할 수 있습니다.</p><form id="photoStickerForm" class="form-stack"><div class="form-field"><label>사진</label><input name="file" type="file" accept="image/*" required></div><div class="form-field"><label>짧은 문구 (선택)</label><input name="body" maxlength="60" placeholder="예: 현장 바닥에서 발견"></div><div class="form-actions"><button class="cancel-btn" type="button" data-close-modal>취소</button><button class="submit-btn" type="submit">사진 붙이기</button></div></form>`,
+      `<h2>사진 스티커 붙이기</h2><p class="modal-lead">사용자가 직접 올린 사진을 독립된 사진 조각처럼 붙입니다. 사진 비율은 유지되며 선택 후 오른쪽 아래 핸들로 크기를 조절할 수 있습니다.</p><form id="photoStickerForm" class="form-stack"><div class="form-field"><label>사진</label><input name="file" type="file" accept="image/*" required></div><div class="form-field"><label>짧은 문구 (선택)</label><input name="body" maxlength="60" placeholder="예: 현장 바닥에서 발견"></div>${secretFieldMarkup()}<div class="form-actions"><button class="cancel-btn" type="button" data-close-modal>취소</button><button class="submit-btn" type="submit">사진 붙이기</button></div></form>`,
     );
   }
 
   function openHelpModal() {
     openModal(
-      `<h2>사용 방법</h2><div class="help-list"><p><strong>선택:</strong> 빈 공간을 드래그하면 드래그 범위 안의 항목을 한꺼번에 선택합니다. Shift를 누르면 기존 선택에 추가할 수 있습니다.</p><p><strong>이동:</strong> 항목을 드래그하면 부드럽게 이동합니다. 여러 항목을 선택한 뒤 하나를 드래그하면 함께 이동합니다.</p><p><strong>사진 크기:</strong> 사진 자료/사진 스티커 선택 후 오른쪽 아래 핸들을 드래그하면 원본 비율을 유지하며 확대·축소됩니다.</p><p><strong>붉은 선:</strong> 왼쪽 ╱ 도구를 선택하고 두 항목을 차례로 클릭합니다.</p><p><strong>보드 이동:</strong> H로 손 도구를 선택하거나 Space를 누른 채 드래그합니다. 마우스 휠(가운데 버튼)을 누른 채 드래그해도 바로 손 도구처럼 이동합니다.</p><p><strong>확대/축소:</strong> Ctrl/⌘ + 휠 또는 오른쪽 아래 확대 버튼을 사용합니다.</p></div><div class="form-actions"><button class="submit-btn" data-close-modal type="button">확인</button></div>`,
+      `<h2>사용 방법</h2><div class="help-list"><p><strong>선택:</strong> 빈 공간을 드래그하면 드래그 범위 안의 항목을 한꺼번에 선택합니다. Shift를 누르면 기존 선택에 추가할 수 있습니다.</p><p><strong>이동:</strong> 항목을 드래그하면 부드럽게 이동합니다. 여러 항목을 선택한 뒤 하나를 드래그하면 함께 이동합니다.</p><p><strong>사진 크기:</strong> 사진 자료/사진 스티커 선택 후 오른쪽 아래 핸들을 드래그하면 원본 비율을 유지하며 확대·축소됩니다.</p><p><strong>비밀글:</strong> HO1·HO2는 등록할 때 비밀글을 선택할 수 있습니다. 비밀글은 작성자 본인과 SYSTEAM에게만 보이며, 작성자가 비밀글을 해제하면 다른 플레이어에게도 공개됩니다.</p><p><strong>붉은 선:</strong> 왼쪽 ╱ 도구를 선택하고 두 항목을 차례로 클릭합니다.</p><p><strong>보드 이동:</strong> H로 손 도구를 선택하거나 Space를 누른 채 드래그합니다. 마우스 휠(가운데 버튼)을 누른 채 드래그해도 바로 손 도구처럼 이동합니다.</p><p><strong>확대/축소:</strong> Ctrl/⌘ + 휠 또는 오른쪽 아래 확대 버튼을 사용합니다.</p></div><div class="form-actions"><button class="submit-btn" data-close-modal type="button">확인</button></div>`,
     );
   }
 
@@ -1153,6 +1171,7 @@
       title,
       body,
       ...attachment,
+      secret: !official && canUseSecretPosts() && fd.get("secret") === "1",
       authorId: session.accountId,
       authorName: session.name,
       authorRole: session.role,
@@ -1184,6 +1203,7 @@
       rotation: randomSignedTilt(1.1, 4.2),
       body,
       color: String(fd.get("color") || NOTE_COLORS[0]),
+      secret: canUseSecretPosts() && fd.get("secret") === "1",
       authorId: session.accountId,
       authorName: session.name,
       authorRole: session.role,
@@ -1213,6 +1233,7 @@
       rotation: Number((Math.random() * 8 - 4).toFixed(1)),
       emoji: String(fd.get("emoji") || STICKERS[0]),
       body: String(fd.get("body") || "").trim(),
+      secret: canUseSecretPosts() && fd.get("secret") === "1",
       authorId: session.accountId,
       authorName: session.name,
       authorRole: session.role,
@@ -1264,6 +1285,7 @@
       rotation: nextPhotoTilt(),
       body: String(fd.get("body") || "").trim(),
       ...attachment,
+      secret: canUseSecretPosts() && fd.get("secret") === "1",
       authorId: session.accountId,
       authorName: session.name,
       authorRole: session.role,
@@ -1834,7 +1856,8 @@
 
     const account = findAccountByCredentials(accountId, code);
     if (!account) {
-      elements.loginMessage.textContent = "ID 또는 비밀번호가 올바르지 않습니다.";
+      elements.loginMessage.textContent =
+        "ID 또는 비밀번호가 올바르지 않습니다.";
       return;
     }
     if (account.blocked) {
@@ -2073,6 +2096,7 @@
       snapshot();
       if ($("#editTitle")) item.title = $("#editTitle").value.trim();
       if ($("#editBody")) item.body = $("#editBody").value.trim();
+      if ($("#editSecret")) item.secret = $("#editSecret").checked;
       item.updatedAt = nowIso();
       saveState();
     }
@@ -2215,26 +2239,53 @@
 
   elements.modal.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (event.target.id === "evidenceForm") await addEvidence(event.target);
-    if (event.target.id === "noteForm") addNote(event.target);
-    if (event.target.id === "stickerForm") addSticker(event.target);
-    if (event.target.id === "photoStickerForm")
-      await addPhotoSticker(event.target);
-    if (event.target.id === "passwordForm" && session.role === "admin") {
-      const fd = new FormData(event.target);
-      const accountId = String(fd.get("accountId") || "");
-      const password = String(fd.get("password") || "").trim();
-      const confirmPassword = String(fd.get("passwordConfirm") || "").trim();
-      if (password !== confirmPassword) {
-        showToast("비밀번호가 서로 다릅니다.");
-        return;
+
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (form.dataset.submitting === "true") return;
+
+    form.dataset.submitting = "true";
+    const submitButton = form.querySelector('[type="submit"]');
+    const originalSubmitText = submitButton?.textContent || "";
+
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.setAttribute("aria-disabled", "true");
+    }
+
+    try {
+      if (form.id === "evidenceForm") await addEvidence(form);
+      if (form.id === "noteForm") await addNote(form);
+      if (form.id === "stickerForm") await addSticker(form);
+      if (form.id === "photoStickerForm") await addPhotoSticker(form);
+
+      if (form.id === "passwordForm" && session.role === "admin") {
+        const fd = new FormData(form);
+        const accountId = String(fd.get("accountId") || "");
+        const password = String(fd.get("password") || "").trim();
+        const confirmPassword = String(fd.get("passwordConfirm") || "").trim();
+
+        if (password !== confirmPassword) {
+          showToast("비밀번호가 서로 다릅니다.");
+          return;
+        }
+
+        try {
+          await setAccountPassword(accountId, password);
+          showToast("비밀번호를 저장했습니다.");
+          await openPlayerManager();
+        } catch (error) {
+          showToast(error?.message || "비밀번호 저장에 실패했습니다.");
+        }
       }
-      try {
-        await setAccountPassword(accountId, password);
-        showToast("비밀번호를 저장했습니다.");
-        await openPlayerManager();
-      } catch (error) {
-        showToast(error?.message || "비밀번호 저장에 실패했습니다.");
+    } finally {
+      if (form.isConnected) {
+        form.dataset.submitting = "false";
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.removeAttribute("aria-disabled");
+          submitButton.textContent = originalSubmitText;
+        }
       }
     }
   });
