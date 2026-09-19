@@ -1,0 +1,9 @@
+3인 실시간 보드 재연결 순서
+
+1) Supabase SQL Editor에서 supabase/schema.sql 실행
+2) deploy-supabase-function.bat 실행
+3) start-server.bat 실행
+4) 아래 계정 중 하나로 접속
+   HO1 / 1234
+   HO2 / 0000
+   SYSTEAM / 4321

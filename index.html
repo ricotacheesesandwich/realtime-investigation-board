@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f1eb" />
+    <title>공동 사건 조사 보드</title>
+    <link rel="stylesheet" href="./css/styles.css" />
+  </head>
+  <body>
+    <section id="loginView" class="login-view" aria-labelledby="loginTitle">
+      <div class="login-card">
+        <p class="login-kicker">INVESTIGATION BOARD</p>
+        <h1 id="loginTitle">공동 사건 조사 보드</h1>
+        <p class="login-lead">
+          플레이어 ID와 비밀번호를 입력하면 같은 조사 보드에 실시간으로 접속합니다.
+        </p>
+
+        <form id="loginForm" class="login-form">
+          <div class="login-field">
+            <label for="accountIdInput">플레이어 ID</label>
+            <input
+              id="accountIdInput"
+              name="accountId"
+              type="text"
+              inputmode="text"
+              autocomplete="username"
+              maxlength="32"
+              placeholder="HO1"
+              required
+            />
+          </div>
+
+          <div class="login-field">
+            <label for="accessCodeInput">비밀번호</label>
+            <input
+              id="accessCodeInput"
+              name="accessCode"
+              type="password"
+              inputmode="numeric"
+              autocomplete="current-password"
+              maxlength="32"
+              placeholder="비밀번호 입력"
+              required
+            />
+          </div>
+
+          <button class="primary-btn login-submit" type="submit">입장</button>
+          <p id="loginMessage" class="login-message" role="alert"></p>
+        </form>
+
+        <div class="login-info">
+          <strong>3인 실시간 보드</strong>
+          <span>각 플레이어는 서로 다른 ID로 접속하며 변경 사항은 같은 보드에 즉시 반영됩니다.</span>
+        </div>
+      </div>
+    </section>
+
+    <div id="boardApp" class="app is-hidden">
+      <header class="topbar">
+        <div class="brand">
+          <div>
+            <input
+              id="boardTitle"
+              class="board-title"
+              value="공동 사건 조사 보드"
+              maxlength="40"
+              aria-label="보드 이름"
+            />
+
+            <div class="board-meta">
+              <span id="syncStatus">저장됨</span>
+              <span class="dot">•</span>
+              <span id="viewerName">참여자</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <button
+            id="playerManagerButton"
+            class="text-btn admin-action"
+            type="button"
+          >
+            플레이어 접속 관리
+          </button>
+
+          <button
+            id="addOfficialButton"
+            class="text-btn admin-action"
+            type="button"
+          >
+            관리자 공개 정보 추가
+          </button>
+
+          <button id="helpButton" class="text-btn" type="button">도움말</button>
+
+          <button id="logoutButton" class="text-btn" type="button">
+            로그아웃
+          </button>
+        </div>
+      </header>
+
+      <aside id="leftToolbar" class="left-toolbar" aria-label="보드 도구">
+        <button
+          class="tool-btn is-active"
+          type="button"
+          data-tool="select"
+          title="선택 (V)"
+        >
+          ↖
+        </button>
+
+        <button
+          class="tool-btn"
+          type="button"
+          data-tool="hand"
+          title="이동 (H / Space / 휠 클릭)"
+        >
+          ✋
+        </button>
+
+        <div class="tool-divider"></div>
+
+        <button
+          id="addEvidenceButton"
+          class="tool-btn"
+          type="button"
+          title="조사 자료 추가"
+        >
+          ▣
+        </button>
+
+        <button
+          id="addNoteButton"
+          class="tool-btn"
+          type="button"
+          title="포스트잇 추가"
+        >
+          ▤
+        </button>
+
+        <button
+          id="addStickerButton"
+          class="tool-btn"
+          type="button"
+          title="기호 스티커 추가"
+        >
+          ✦
+        </button>
+
+        <button
+          id="addPhotoStickerButton"
+          class="tool-btn"
+          type="button"
+          title="사진 스티커 추가"
+        >
+          ▧
+        </button>
+
+        <button
+          class="tool-btn connect-tool"
+          type="button"
+          data-tool="connect"
+          title="붉은 선 연결 (C)"
+        >
+          ╱
+        </button>
+
+        <div class="tool-divider"></div>
+
+        <button
+          id="deleteButton"
+          class="tool-btn danger-tool"
+          type="button"
+          title="선택 삭제 (Delete)"
+          aria-label="선택 삭제"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 10v6M14 10v6" />
+          </svg>
+        </button>
+      </aside>
+
+      <main
+        id="viewport"
+        class="viewport"
+        tabindex="0"
+        aria-label="공동 사건 조사 캔버스"
+      >
+        <div id="world" class="world">
+          <svg
+            id="connectionsLayer"
+            class="connections-layer"
+            width="6000"
+            height="4000"
+            viewBox="0 0 6000 4000"
+            aria-hidden="true"
+          ></svg>
+
+          <div id="itemsLayer" class="items-layer"></div>
+        </div>
+
+        <div id="emptyHint" class="empty-hint">
+          <strong>사건 자료를 이곳에 펼쳐 놓으세요.</strong>
+          <span>
+            사진 자료, 포스트잇, 스티커를 자유롭게 배치하고 붉은 선으로 실마리를
+            연결할 수 있습니다.
+          </span>
+        </div>
+
+        <div
+          id="selectionMarquee"
+          class="selection-marquee is-hidden"
+          aria-hidden="true"
+        ></div>
+      </main>
+
+      <div class="zoom-controls">
+        <button id="zoomOutButton" class="round-btn" type="button">−</button>
+        <button id="zoomResetButton" class="zoom-value" type="button">
+          100%
+        </button>
+        <button id="zoomInButton" class="round-btn" type="button">＋</button>
+        <button
+          id="zoomFitButton"
+          class="round-btn"
+          type="button"
+          title="전체 보기"
+        >
+          ⌗
+        </button>
+      </div>
+
+      <aside
+        id="selectionPanel"
+        class="selection-panel is-hidden"
+        aria-live="polite"
+      ></aside>
+    </div>
+
+    <div id="modalBackdrop" class="modal-backdrop is-hidden">
+      <section
+        id="modal"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+      ></section>
+    </div>
+
+    <div id="toast" class="toast is-hidden" role="status"></div>
+
+    <script src="./js/config.js"></script>
+
+    <script>
+      if (
+        window.INVESTIGATION_BOARD_CONFIG?.mode === "supabase" &&
+        window.INVESTIGATION_BOARD_CONFIG?.supabase?.enabled
+      ) {
+        document.write(
+          '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"><\/script>',
+        );
+      }
+    </script>
+
+    <script src="./js/supabase-api.js"></script>
+    <script src="./js/app.js"></script>
+  </body>
+</html>

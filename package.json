@@ -1,0 +1,16 @@
+{
+  "name": "realtime-investigation-board",
+  "version": "1.0.0",
+  "description": "FigJam / 사건수사 보드처럼 사진과 메모를 자유롭게 배치하고 붉은 선으로 실마리를 연결하는 조사 협업 사이트입니다.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "supabase": "^2.115.0"
+  }
+}
