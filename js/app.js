@@ -174,6 +174,7 @@
   let selected = null;
   let selectedIds = new Set();
   let connectSource = null;
+  let pendingConnection = null;
   let tool = "select";
   let pan = { x: -1800, y: -1100, scale: 1 };
   let panning = null;
@@ -411,17 +412,14 @@
 
   function setTool(next) {
     tool = next;
-    const isConnectionTool = tool === "connect" || tool === "secret-connect";
+    const isConnectionTool = tool === "connect";
     if (!isConnectionTool) connectSource = null;
     $$("[data-tool]").forEach((btn) =>
       btn.classList.toggle("is-active", btn.dataset.tool === tool),
     );
     elements.viewport.classList.toggle("is-hand", tool === "hand");
     elements.viewport.classList.toggle("is-connecting", isConnectionTool);
-    elements.viewport.classList.toggle(
-      "is-secret-connecting",
-      tool === "secret-connect",
-    );
+    elements.viewport.classList.remove("is-secret-connecting");
     renderBoard();
   }
 
@@ -688,15 +686,65 @@
     return { x: geometry.x + geometry.w / 2, y: geometry.y + geometry.h / 2 };
   }
 
+  function connectionPairKey(connection) {
+    return [String(connection.from), String(connection.to)].sort().join("::");
+  }
+
   function renderConnections() {
     const itemsById = new Map(state.items.map((item) => [item.id, item]));
+    const pairGroups = new Map();
+
+    for (const connection of state.connections) {
+      const key = connectionPairKey(connection);
+      if (!pairGroups.has(key)) pairGroups.set(key, []);
+      pairGroups.get(key).push(connection);
+    }
+
+    for (const connections of pairGroups.values()) {
+      connections.sort((a, b) => {
+        const secretCompare =
+          Number(Boolean(a.secret)) - Number(Boolean(b.secret));
+        if (secretCompare !== 0) return secretCompare;
+        const timeCompare = String(a.createdAt || "").localeCompare(
+          String(b.createdAt || ""),
+        );
+        if (timeCompare !== 0) return timeCompare;
+        return String(a.id).localeCompare(String(b.id));
+      });
+    }
+
     elements.svg.innerHTML = state.connections
       .map((connection) => {
         const from = itemsById.get(connection.from);
         const to = itemsById.get(connection.to);
         if (!from || !to) return "";
-        const p1 = itemCenter(from);
-        const p2 = itemCenter(to);
+
+        const baseP1 = itemCenter(from);
+        const baseP2 = itemCenter(to);
+        const dx = baseP2.x - baseP1.x;
+        const dy = baseP2.y - baseP1.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const normalX = -dy / length;
+        const normalY = dx / length;
+
+        const siblings = pairGroups.get(connectionPairKey(connection)) || [
+          connection,
+        ];
+        const siblingIndex = Math.max(
+          0,
+          siblings.findIndex((entry) => entry.id === connection.id),
+        );
+        const parallelGap = 22;
+        const offset = (siblingIndex - (siblings.length - 1) / 2) * parallelGap;
+
+        const p1 = {
+          x: baseP1.x + normalX * offset,
+          y: baseP1.y + normalY * offset,
+        };
+        const p2 = {
+          x: baseP2.x + normalX * offset,
+          y: baseP2.y + normalY * offset,
+        };
         const mx = (p1.x + p2.x) / 2;
         const my = (p1.y + p2.y) / 2;
         const selectedClass =
@@ -708,7 +756,7 @@
           200,
           34 + String(connection.label || "").length * 11,
         );
-        return `<g data-connection-id="${esc(connection.id)}"><line class="connection-hit" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg${secretClass}" x="${mx - labelWidth / 2}" y="${my - 13}" width="${labelWidth}" height="26" rx="8"/><text class="connection-label${secretClass}" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
+        return `<g class="connection-group" data-connection-id="${esc(connection.id)}"><line class="connection-hit" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg${secretClass}" x="${mx - labelWidth / 2}" y="${my - 13}" width="${labelWidth}" height="26" rx="8"/><text class="connection-label${secretClass}" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
       })
       .join("");
   }
@@ -920,6 +968,7 @@
   function closeModal() {
     elements.modalBackdrop.classList.add("is-hidden");
     elements.modal.innerHTML = "";
+    pendingConnection = null;
   }
 
   function canUseSecretPosts() {
@@ -956,9 +1005,99 @@
     );
   }
 
+  function connectionFormMarkup({
+    connection = null,
+    fromId = "",
+    toId = "",
+  } = {}) {
+    const editing = Boolean(connection);
+    const secret = connection?.secret === true;
+    const fromItem = state.items.find(
+      (item) => item.id === (connection?.from || fromId),
+    );
+    const toItem = state.items.find(
+      (item) => item.id === (connection?.to || toId),
+    );
+    const fromLabel =
+      fromItem?.title || fromItem?.body || fromItem?.type || "항목 1";
+    const toLabel = toItem?.title || toItem?.body || toItem?.type || "항목 2";
+    const owner =
+      connection?.authorName || session?.name || session?.accountId || "";
+    const canEdit = !editing || canDeleteConnection(connection);
+    const privacyDisabled = canEdit ? "" : "disabled";
+    return `<h2>${editing ? "연결선 수정" : "연결 설정"}</h2><p class="modal-lead">연결 문구를 적고 공개선 또는 비밀선을 선택하세요. 같은 두 항목 사이에도 공개선과 비밀선을 각각 따로 만들 수 있습니다. 비밀선은 작성자와 SYSTEAM에게만 보입니다.</p><div class="connection-modal-meta"><span>${esc(String(fromLabel).slice(0, 32))}</span><span>→</span><span>${esc(String(toLabel).slice(0, 32))}</span>${editing ? `<span>· ${esc(owner)}</span>` : ""}</div><form id="connectionForm" class="form-stack"><input type="hidden" name="mode" value="${editing ? "edit" : "create"}"><input type="hidden" name="connectionId" value="${esc(connection?.id || "")}"><input type="hidden" name="fromId" value="${esc(connection?.from || fromId)}"><input type="hidden" name="toId" value="${esc(connection?.to || toId)}"><div class="form-field"><label>연결 문구</label><input name="label" maxlength="60" placeholder="예: 동기, 절친 / 동일 인물 / 시간대 일치" value="${esc(connection?.label || "")}" ${canEdit ? "" : "disabled"}></div><div class="form-field"><label>연결선 공개 범위</label><div class="connection-choice-grid"><label class="connection-choice connection-choice--public"><input type="radio" name="privacy" value="public" ${secret ? "" : "checked"} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>붉은 공개선</strong><small>HO1, HO2, SYSTEAM 모두에게 선과 문구가 보입니다.</small></span></label><label class="connection-choice connection-choice--secret"><input type="radio" name="privacy" value="secret" ${secret ? "checked" : ""} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>푸른 비밀선</strong><small>작성자 본인과 SYSTEAM만 선과 문구를 볼 수 있습니다.</small></span></label></div></div><div class="form-actions">${editing && canEdit ? `<button class="connection-delete-btn" type="button" data-delete-connection-modal>연결선 삭제</button>` : ""}<button class="cancel-btn" type="button" data-close-modal>취소</button>${canEdit ? `<button class="submit-btn" type="submit">${editing ? "수정 저장" : "연결 만들기"}</button>` : ""}</div></form>`;
+  }
+
+  function openConnectionCreateModal(fromId, toId) {
+    pendingConnection = { fromId, toId };
+    openModal(connectionFormMarkup({ fromId, toId }));
+  }
+
+  function openConnectionEditModal(connectionId) {
+    const connection = state.connections.find(
+      (entry) => entry.id === connectionId,
+    );
+    if (!connection) return;
+    pendingConnection = null;
+    selectedIds.clear();
+    selected = { type: "connection", id: connection.id };
+    renderConnections();
+    renderSelectionPanel();
+    openModal(connectionFormMarkup({ connection }));
+  }
+
+  async function submitConnectionForm(form) {
+    const fd = new FormData(form);
+    const mode = String(fd.get("mode") || "create");
+    const label = String(fd.get("label") || "").trim();
+    const secret = String(fd.get("privacy") || "public") === "secret";
+
+    if (mode === "edit") {
+      const connectionId = String(fd.get("connectionId") || "");
+      const connection = state.connections.find(
+        (entry) => entry.id === connectionId,
+      );
+      if (!connection || !canDeleteConnection(connection)) return;
+      snapshot();
+      connection.label = label;
+      connection.secret = secret;
+      connection.color = secret ? "blue" : "red";
+      connection.updatedAt = nowIso();
+      closeModal();
+      await saveState();
+      return;
+    }
+
+    const fromId = String(fd.get("fromId") || pendingConnection?.fromId || "");
+    const toId = String(fd.get("toId") || pendingConnection?.toId || "");
+    if (!fromId || !toId || fromId === toId) return;
+    snapshot();
+    const connection = {
+      id: uid("conn"),
+      from: fromId,
+      to: toId,
+      label,
+      secret,
+      authorId: session.accountId,
+      authorName: session.name,
+      authorRole: session.role,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      color: secret ? "blue" : "red",
+    };
+    state.connections.push(connection);
+    selectedIds.clear();
+    selected = { type: "connection", id: connection.id };
+    connectSource = null;
+    pendingConnection = null;
+    setTool("select");
+    closeModal();
+    await saveState();
+  }
+
   function openHelpModal() {
     openModal(
-      `<h2>사용 방법</h2><div class="help-list"><p><strong>선택:</strong> 빈 공간을 드래그하면 드래그 범위 안의 항목을 한꺼번에 선택합니다. Shift를 누르면 기존 선택에 추가할 수 있습니다.</p><p><strong>이동:</strong> 항목을 드래그하면 부드럽게 이동합니다. 여러 항목을 선택한 뒤 하나를 드래그하면 함께 이동합니다.</p><p><strong>사진 크기:</strong> 사진 자료/사진 스티커 선택 후 오른쪽 아래 핸들을 드래그하면 원본 비율을 유지하며 확대·축소됩니다.</p><p><strong>비밀글:</strong> HO1·HO2는 등록할 때 비밀글을 선택할 수 있습니다. 비밀글은 작성자 본인과 SYSTEAM에게만 보이며, 작성자가 비밀글을 해제하면 다른 플레이어에게도 공개됩니다.</p><p><strong>붉은 선:</strong> 왼쪽 붉은 ╱ 도구를 선택하고 두 항목을 차례로 클릭합니다. 모두에게 공개됩니다.</p><p><strong>푸른 비밀선:</strong> 왼쪽 푸른 ╱ 도구를 선택하고 두 항목을 차례로 클릭합니다. 작성자와 SYSTEAM에게만 선과 문구가 보입니다.</p><p><strong>연결선 삭제:</strong> 연결선을 클릭해 선택한 뒤 오른쪽 패널의 삭제 버튼이나 Delete 키를 사용합니다.</p><p><strong>보드 이동:</strong> H로 손 도구를 선택하거나 Space를 누른 채 드래그합니다. 마우스 휠(가운데 버튼)을 누른 채 드래그해도 바로 손 도구처럼 이동합니다.</p><p><strong>확대/축소:</strong> Ctrl/⌘ + 휠 또는 오른쪽 아래 확대 버튼을 사용합니다.</p></div><div class="form-actions"><button class="submit-btn" data-close-modal type="button">확인</button></div>`,
+      `<h2>사용 방법</h2><div class="help-list"><p><strong>선택:</strong> 빈 공간을 드래그하면 드래그 범위 안의 항목을 한꺼번에 선택합니다. Shift를 누르면 기존 선택에 추가할 수 있습니다.</p><p><strong>이동:</strong> 항목을 드래그하면 부드럽게 이동합니다. 여러 항목을 선택한 뒤 하나를 드래그하면 함께 이동합니다.</p><p><strong>사진 크기:</strong> 사진 자료/사진 스티커 선택 후 오른쪽 아래 핸들을 드래그하면 원본 비율을 유지하며 확대·축소됩니다.</p><p><strong>비밀글:</strong> HO1·HO2는 등록할 때 비밀글을 선택할 수 있습니다. 비밀글은 작성자 본인과 SYSTEAM에게만 보이며, 작성자가 비밀글을 해제하면 다른 플레이어에게도 공개됩니다.</p><p><strong>연결선:</strong> 왼쪽 연결 도구를 선택하고 두 항목을 차례로 클릭하면 연결 설정 패널이 열립니다. 문구를 작성하고 붉은 공개선 또는 푸른 비밀선을 선택할 수 있습니다. 같은 두 항목에도 여러 연결선을 독립적으로 만들 수 있습니다.</p><p><strong>비밀선:</strong> 푸른 비밀선은 작성자와 SYSTEAM에게만 선과 문구가 보입니다.</p><p><strong>연결선 수정/삭제:</strong> 기존 연결선을 클릭하면 설정 패널이 열립니다. 문구·공개 범위를 수정하거나 연결선을 삭제할 수 있습니다.</p><p><strong>보드 이동:</strong> H로 손 도구를 선택하거나 Space를 누른 채 드래그합니다. 마우스 휠(가운데 버튼)을 누른 채 드래그해도 바로 손 도구처럼 이동합니다.</p><p><strong>확대/축소:</strong> Ctrl/⌘ + 휠 또는 오른쪽 아래 확대 버튼을 사용합니다.</p></div><div class="form-actions"><button class="submit-btn" data-close-modal type="button">확인</button></div>`,
     );
   }
 
@@ -1392,44 +1531,11 @@
     await saveState();
   }
 
-  function createConnection(fromId, toId, { secret = false } = {}) {
+  function prepareConnection(fromId, toId) {
     if (fromId === toId) return;
-    const existing = state.connections.find(
-      (connection) =>
-        (connection.from === fromId && connection.to === toId) ||
-        (connection.from === toId && connection.to === fromId),
-    );
-    if (existing) {
-      selectedIds.clear();
-      selected = { type: "connection", id: existing.id };
-      connectSource = null;
-      setTool("select");
-      showToast(
-        "이미 연결된 항목입니다. 오른쪽 패널에서 공개 범위를 변경할 수 있습니다.",
-      );
-      return;
-    }
-
-    snapshot();
-    const connection = {
-      id: uid("conn"),
-      from: fromId,
-      to: toId,
-      label: "",
-      secret: Boolean(secret),
-      authorId: session.accountId,
-      authorName: session.name,
-      authorRole: session.role,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      color: secret ? "blue" : "red",
-    };
-    state.connections.push(connection);
-    selectedIds.clear();
-    selected = { type: "connection", id: connection.id };
     connectSource = null;
     setTool("select");
-    saveState();
+    openConnectionCreateModal(fromId, toId);
   }
 
   function zoomAt(nextScale, clientX, clientY) {
@@ -1887,6 +1993,27 @@
     await enterBoard();
   });
 
+  elements.svg.addEventListener(
+    "pointerdown",
+    (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const connectionElement = target?.closest("[data-connection-id]");
+      if (!connectionElement) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openConnectionEditModal(connectionElement.dataset.connectionId);
+    },
+    true,
+  );
+
+  elements.svg.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const connectionElement = target?.closest("[data-connection-id]");
+    if (!connectionElement) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
   elements.viewport.addEventListener("pointerdown", (event) => {
     if (!currentSessionValid()) {
       enforceAccountStatus();
@@ -1940,14 +2067,8 @@
     }
 
     if (connectionElement) {
-      selectedIds.clear();
-      selected = {
-        type: "connection",
-        id: connectionElement.dataset.connectionId,
-      };
-      updateSelectionClasses();
-      renderSelectionPanel();
-      renderConnections();
+      event.preventDefault();
+      openConnectionEditModal(connectionElement.dataset.connectionId);
       return;
     }
 
@@ -1966,20 +2087,15 @@
     const item = state.items.find((entry) => entry.id === id);
     if (!item) return;
 
-    if (tool === "connect" || tool === "secret-connect") {
-      const secretConnection = tool === "secret-connect";
+    if (tool === "connect") {
       if (!connectSource) {
         connectSource = id;
         selectedIds = new Set([id]);
         selected = { type: "item", id };
-        showToast(
-          secretConnection
-            ? "푸른 비밀선으로 연결할 두 번째 항목을 선택하세요."
-            : "붉은 선으로 연결할 두 번째 항목을 선택하세요.",
-        );
+        showToast("연결할 두 번째 항목을 선택하세요.");
         renderBoard();
       } else {
-        createConnection(connectSource, id, { secret: secretConnection });
+        prepareConnection(connectSource, id);
       }
       return;
     }
@@ -2152,7 +2268,6 @@
     if (event.key === "v" || event.key === "V") setTool("select");
     if (event.key === "h" || event.key === "H") setTool("hand");
     if (event.key === "c" || event.key === "C") setTool("connect");
-    if (event.key === "b" || event.key === "B") setTool("secret-connect");
     if (event.key === "Delete" || event.key === "Backspace") deleteSelected();
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
@@ -2225,6 +2340,12 @@
       closeModal();
       return;
     }
+    if (event.target.closest("[data-delete-connection-modal]")) {
+      if (selected?.type !== "connection") return;
+      closeModal();
+      await deleteSelected();
+      return;
+    }
     if (event.target.closest("[data-back-player-manager]")) {
       await openPlayerManager();
       return;
@@ -2287,6 +2408,7 @@
       if (form.id === "noteForm") await addNote(form);
       if (form.id === "stickerForm") await addSticker(form);
       if (form.id === "photoStickerForm") await addPhotoSticker(form);
+      if (form.id === "connectionForm") await submitConnectionForm(form);
 
       if (form.id === "passwordForm" && session.role === "admin") {
         const fd = new FormData(form);
