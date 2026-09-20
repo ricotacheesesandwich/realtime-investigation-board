@@ -742,6 +742,10 @@
     return [String(connection.from), String(connection.to)].sort().join("::");
   }
 
+  function connectionSortValue(connection) {
+    return `${String(connection.createdAt || "")}|${String(connection.id || "")}`;
+  }
+
   function buildConnectionLayouts() {
     const itemsById = new Map(state.items.map((item) => [item.id, item]));
     const pairGroups = new Map();
@@ -752,16 +756,79 @@
       pairGroups.get(key).push(connection);
     }
 
+    const connectionMeta = new Map();
+    const sortConnections = (a, b) => {
+      const privacyCompare =
+        Number(connectionIsSecret(a)) - Number(connectionIsSecret(b));
+      if (privacyCompare !== 0) return privacyCompare;
+      const timeCompare = String(a.createdAt || "").localeCompare(
+        String(b.createdAt || ""),
+      );
+      if (timeCompare !== 0) return timeCompare;
+      return String(a.id).localeCompare(String(b.id));
+    };
+
     for (const connections of pairGroups.values()) {
-      connections.sort((a, b) => {
-        const privacyCompare =
-          Number(connectionIsSecret(a)) - Number(connectionIsSecret(b));
-        if (privacyCompare !== 0) return privacyCompare;
-        const timeCompare = String(a.createdAt || "").localeCompare(
-          String(b.createdAt || ""),
-        );
-        if (timeCompare !== 0) return timeCompare;
-        return String(a.id).localeCompare(String(b.id));
+      const sorted = [...connections].sort(sortConnections);
+      const units = [];
+      const used = new Set();
+
+      for (const connection of sorted) {
+        if (used.has(connection.id)) continue;
+
+        let partner = null;
+        if (!connectionIsSecret(connection)) {
+          partner = sorted.find(
+            (other) =>
+              !used.has(other.id) &&
+              other.id !== connection.id &&
+              !connectionIsSecret(other) &&
+              String(other.from) === String(connection.to) &&
+              String(other.to) === String(connection.from),
+          );
+        }
+
+        if (partner) {
+          used.add(connection.id);
+          used.add(partner.id);
+          units.push({
+            reciprocal: true,
+            sortKey:
+              connectionSortValue(connection) <= connectionSortValue(partner)
+                ? connectionSortValue(connection)
+                : connectionSortValue(partner),
+            connections: [connection, partner],
+          });
+        } else {
+          used.add(connection.id);
+          units.push({
+            reciprocal: false,
+            sortKey: connectionSortValue(connection),
+            connections: [connection],
+          });
+        }
+      }
+
+      units.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+      const parallelGap = 34;
+      units.forEach((unit, unitIndex) => {
+        const laneIndex =
+          unitIndex === 0
+            ? 0
+            : unitIndex % 2 === 1
+              ? Math.ceil(unitIndex / 2)
+              : -Math.ceil(unitIndex / 2);
+        const offset = laneIndex * parallelGap;
+        unit.connections.forEach((connection, localIndex) => {
+          connectionMeta.set(connection.id, {
+            offset,
+            reciprocal: unit.reciprocal,
+            partnerId: unit.reciprocal
+              ? unit.connections[1 - localIndex].id
+              : null,
+          });
+        });
       });
     }
 
@@ -771,28 +838,20 @@
       const to = itemsById.get(connection.to);
       if (!from || !to) continue;
 
+      const meta = connectionMeta.get(connection.id) || {
+        offset: 0,
+        reciprocal: false,
+        partnerId: null,
+      };
+
       const baseP1 = itemCenter(from);
       const baseP2 = itemCenter(to);
       const dx = baseP2.x - baseP1.x;
       const dy = baseP2.y - baseP1.y;
-      const length = Math.hypot(dx, dy) || 1;
-      const normalX = -dy / length;
-      const normalY = dx / length;
-      const siblings = pairGroups.get(connectionPairKey(connection)) || [
-        connection,
-      ];
-      const siblingIndex = Math.max(
-        0,
-        siblings.findIndex((entry) => entry.id === connection.id),
-      );
-      const parallelGap = 34;
-      const laneIndex =
-        siblingIndex === 0
-          ? 0
-          : siblingIndex % 2 === 1
-            ? Math.ceil(siblingIndex / 2)
-            : -Math.ceil(siblingIndex / 2);
-      const offset = laneIndex * parallelGap;
+      const rawLength = Math.hypot(dx, dy) || 1;
+      const normalX = -dy / rawLength;
+      const normalY = dx / rawLength;
+      const offset = meta.offset || 0;
       const p1 = {
         x: baseP1.x + normalX * offset,
         y: baseP1.y + normalY * offset,
@@ -801,16 +860,30 @@
         x: baseP2.x + normalX * offset,
         y: baseP2.y + normalY * offset,
       };
+      const mid = {
+        x: (p1.x + p2.x) / 2,
+        y: (p1.y + p2.y) / 2,
+      };
+      const renderP2 = meta.reciprocal ? mid : p2;
+      const renderDx = renderP2.x - p1.x;
+      const renderDy = renderP2.y - p1.y;
+      const renderLength = Math.hypot(renderDx, renderDy) || 1;
 
       layouts.set(connection.id, {
         connection,
         p1,
         p2,
+        mid,
+        renderP1: p1,
+        renderP2,
         dx: p2.x - p1.x,
         dy: p2.y - p1.y,
-        length,
+        length: rawLength,
+        renderLength,
         normalX,
         normalY,
+        reciprocalPartnerId: meta.partnerId,
+        isReciprocal: Boolean(meta.reciprocal),
       });
     }
     return layouts;
@@ -911,25 +984,34 @@
         return String(a.connection.id).localeCompare(String(b.connection.id));
       });
 
-    const tCandidates = [];
-    for (let step = 0; step <= 10; step += 1) {
-      if (step === 0) {
-        tCandidates.push(0.5);
-        continue;
+    function createTCandidates(reciprocal) {
+      const candidates = [];
+      const targetBase = reciprocal ? 0.58 : 0.5;
+      const min = reciprocal ? 0.18 : 0.12;
+      const max = reciprocal ? 0.88 : 0.88;
+      for (let step = 0; step <= 10; step += 1) {
+        if (step === 0) {
+          candidates.push(targetBase);
+          continue;
+        }
+        const delta = step * 0.055;
+        if (targetBase - delta >= min) candidates.push(targetBase - delta);
+        if (targetBase + delta <= max) candidates.push(targetBase + delta);
       }
-      const delta = step * 0.035;
-      if (0.5 - delta >= 0.12) tCandidates.push(0.5 - delta);
-      if (0.5 + delta <= 0.88) tCandidates.push(0.5 + delta);
+      return candidates;
     }
 
     for (const layout of entries) {
-      const { connection, p1, p2 } = layout;
+      const { connection } = layout;
+      const segmentStart = layout.renderP1;
+      const segmentEnd = layout.renderP2;
+      const tCandidates = createTCandidates(layout.isReciprocal);
       const { width, height } = connectionLabelSize(connection);
       let best = null;
 
       for (const t of tCandidates) {
-        const x = p1.x + (p2.x - p1.x) * t;
-        const y = p1.y + (p2.y - p1.y) * t;
+        const x = segmentStart.x + (segmentEnd.x - segmentStart.x) * t;
+        const y = segmentStart.y + (segmentEnd.y - segmentStart.y) * t;
         const box = {
           left: x - width / 2,
           top: y - height / 2,
@@ -937,7 +1019,7 @@
           bottom: y + height / 2,
         };
 
-        let score = Math.abs(t - 0.5) * 900;
+        let score = Math.abs(t - (layout.isReciprocal ? 0.58 : 0.5)) * 900;
 
         if (
           box.left < 8 ||
@@ -965,7 +1047,13 @@
 
         for (const otherLayout of lineLayouts) {
           if (otherLayout.connection.id === connection.id) continue;
-          if (segmentIntersectsBox(otherLayout.p1, otherLayout.p2, padded)) {
+          if (
+            segmentIntersectsBox(
+              otherLayout.renderP1,
+              otherLayout.renderP2,
+              padded,
+            )
+          ) {
             score += 180000;
           }
         }
@@ -978,8 +1066,8 @@
       }
 
       if (!best) {
-        const x = (p1.x + p2.x) / 2;
-        const y = (p1.y + p2.y) / 2;
+        const x = (segmentStart.x + segmentEnd.x) / 2;
+        const y = (segmentStart.y + segmentEnd.y) / 2;
         best = {
           x,
           y,
@@ -1025,13 +1113,37 @@
     let nearestDistance = Infinity;
 
     for (const layout of layouts.values()) {
-      const distance = distanceToSegment(point, layout.p1, layout.p2);
+      const distance = distanceToSegment(
+        point,
+        layout.renderP1,
+        layout.renderP2,
+      );
       if (distance <= threshold && distance < nearestDistance) {
         nearest = layout.connection;
         nearestDistance = distance;
       }
     }
     return nearest;
+  }
+
+  function connectionArrowHead(layout, size = 14) {
+    const start = layout.renderP1;
+    const end = layout.renderP2;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const ux = dx / length;
+    const uy = dy / length;
+    const px = -uy;
+    const py = ux;
+    const backX = end.x - ux * size;
+    const backY = end.y - uy * size;
+    const spread = size * 0.7;
+    return {
+      tip: end,
+      a: { x: backX + px * spread, y: backY + py * spread },
+      b: { x: backX - px * spread, y: backY - py * spread },
+    };
   }
 
   function renderConnections() {
@@ -1042,7 +1154,7 @@
       .map((connection) => {
         const layout = layouts.get(connection.id);
         if (!layout) return "";
-        const { p1, p2 } = layout;
+        const { renderP1, renderP2, p1, p2, isReciprocal } = layout;
         const selectedClass =
           selected?.type === "connection" && selected.id === connection.id
             ? " is-selected"
@@ -1050,6 +1162,12 @@
         const secretClass = connectionIsSecret(connection) ? " is-secret" : "";
         const id = esc(connection.id);
         const themeStyle = esc(connectionThemeStyle(connection));
+
+        if (isReciprocal) {
+          const arrow = connectionArrowHead(layout);
+          return `<g class="connection-group${selectedClass}" data-connection-id="${id}" style="${themeStyle}"><line class="connection-hit" data-connection-id="${id}" x1="${renderP1.x}" y1="${renderP1.y}" x2="${renderP2.x}" y2="${renderP2.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${renderP1.x}" y1="${renderP1.y}" x2="${renderP2.x}" y2="${renderP2.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${arrow.tip.x}" y1="${arrow.tip.y}" x2="${arrow.a.x}" y2="${arrow.a.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${arrow.tip.x}" y1="${arrow.tip.y}" x2="${arrow.b.x}" y2="${arrow.b.y}"/></g>`;
+        }
+
         return `<g class="connection-group${selectedClass}" data-connection-id="${id}" style="${themeStyle}"><line class="connection-hit" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p2.x}" cy="${p2.y}" r="4"/></g>`;
       })
       .join("");
