@@ -757,10 +757,17 @@
     }
 
     const connectionMeta = new Map();
-    const sortConnections = (a, b) => {
-      const privacyCompare =
-        Number(connectionIsSecret(a)) - Number(connectionIsSecret(b));
-      if (privacyCompare !== 0) return privacyCompare;
+    const authorKey = (connection) =>
+      String(
+        connection?.authorId || connection?.authorName || "",
+      ).toUpperCase();
+    const isPlayerAuthor = (connection) =>
+      ["HO1", "HO2"].includes(authorKey(connection));
+    const isSystemPublic = (connection) =>
+      !connectionIsSecret(connection) && authorKey(connection) === "SYSTEAM";
+    const isPlayerPublic = (connection) =>
+      !connectionIsSecret(connection) && isPlayerAuthor(connection);
+    const sortByCreated = (a, b) => {
       const timeCompare = String(a.createdAt || "").localeCompare(
         String(b.createdAt || ""),
       );
@@ -768,33 +775,34 @@
       return String(a.id).localeCompare(String(b.id));
     };
 
-    for (const connections of pairGroups.values()) {
-      const sorted = [...connections].sort(sortConnections);
+    function buildReciprocalUnits(
+      connections,
+      { requirePlayerPair = true } = {},
+    ) {
+      const sorted = [...connections].sort(sortByCreated);
       const units = [];
       const used = new Set();
 
       for (const connection of sorted) {
         if (used.has(connection.id)) continue;
 
+        const currentAuthor = authorKey(connection);
+        const expectedAuthor =
+          currentAuthor === "HO1"
+            ? "HO2"
+            : currentAuthor === "HO2"
+              ? "HO1"
+              : "";
         let partner = null;
-        const secretState = connectionIsSecret(connection);
-        const authorId = String(
-          connection.authorId || connection.authorName || "",
-        ).toUpperCase();
-        const reciprocalAuthorId =
-          authorId === "HO1" ? "HO2" : authorId === "HO2" ? "HO1" : "";
 
-        if (reciprocalAuthorId) {
-          partner = sorted.find(
-            (other) =>
-              !used.has(other.id) &&
-              other.id !== connection.id &&
-              String(other.authorId || other.authorName || "").toUpperCase() ===
-                reciprocalAuthorId &&
-              connectionIsSecret(other) === secretState &&
-              String(other.from) === String(connection.to) &&
-              String(other.to) === String(connection.from),
-          );
+        if (!requirePlayerPair || expectedAuthor) {
+          partner = sorted.find((other) => {
+            if (used.has(other.id) || other.id === connection.id) return false;
+            if (String(other.from) !== String(connection.to)) return false;
+            if (String(other.to) !== String(connection.from)) return false;
+            if (requirePlayerPair) return authorKey(other) === expectedAuthor;
+            return authorKey(other) !== currentAuthor;
+          });
         }
 
         if (partner) {
@@ -819,16 +827,12 @@
       }
 
       units.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+      return units;
+    }
 
-      const parallelGap = 34;
+    function assignUnits(units, offsets) {
       units.forEach((unit, unitIndex) => {
-        const laneIndex =
-          unitIndex === 0
-            ? 0
-            : unitIndex % 2 === 1
-              ? Math.ceil(unitIndex / 2)
-              : -Math.ceil(unitIndex / 2);
-        const offset = laneIndex * parallelGap;
+        const offset = offsets(unitIndex);
         unit.connections.forEach((connection, localIndex) => {
           connectionMeta.set(connection.id, {
             offset,
@@ -839,6 +843,53 @@
           });
         });
       });
+    }
+
+    for (const connections of pairGroups.values()) {
+      const systemPublic = connections
+        .filter(isSystemPublic)
+        .sort(sortByCreated);
+      const playerPublic = connections.filter(isPlayerPublic);
+      const secretConnections = connections.filter((connection) =>
+        connectionIsSecret(connection),
+      );
+      const otherPublic = connections.filter(
+        (connection) =>
+          !connectionIsSecret(connection) &&
+          !isSystemPublic(connection) &&
+          !isPlayerPublic(connection),
+      );
+
+      const publicUnits = buildReciprocalUnits(playerPublic, {
+        requirePlayerPair: true,
+      });
+      const secretUnits = buildReciprocalUnits(secretConnections, {
+        requirePlayerPair: true,
+      });
+      const otherUnits = buildReciprocalUnits(otherPublic, {
+        requirePlayerPair: false,
+      });
+
+      // SYSTEAM의 붉은 공식선은 언제나 중앙선에 독립적으로 둔다.
+      systemPublic.forEach((connection) => {
+        connectionMeta.set(connection.id, {
+          offset: 0,
+          reciprocal: false,
+          partnerId: null,
+        });
+      });
+
+      // HO1 노랑 / HO2 분홍 공개선은 언제나 중앙보다 위쪽에 둔다.
+      assignUnits(publicUnits, (index) => -44 - index * 36);
+
+      // 기타 공개선도 공개 플레이어 영역 아래쪽이 아닌 위쪽에 이어서 둔다.
+      assignUnits(
+        otherUnits,
+        (index) => -44 - (publicUnits.length + index) * 36,
+      );
+
+      // 비공개 푸른선은 언제나 중앙보다 아래쪽에 둔다.
+      assignUnits(secretUnits, (index) => 44 + index * 36);
     }
 
     const layouts = new Map();
@@ -858,8 +909,15 @@
       const dx = baseP2.x - baseP1.x;
       const dy = baseP2.y - baseP1.y;
       const rawLength = Math.hypot(dx, dy) || 1;
-      const normalX = -dy / rawLength;
-      const normalY = dx / rawLength;
+
+      // 연결 방향이 반대여도 '위/아래'가 뒤집히지 않도록 화면 기준의 법선을 고정한다.
+      let normalX = -dy / rawLength;
+      let normalY = dx / rawLength;
+      if (normalY < 0 || (Math.abs(normalY) < 0.0001 && normalX < 0)) {
+        normalX *= -1;
+        normalY *= -1;
+      }
+
       const offset = meta.offset || 0;
       const p1 = {
         x: baseP1.x + normalX * offset,
