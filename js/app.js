@@ -911,91 +911,75 @@
         return String(a.connection.id).localeCompare(String(b.connection.id));
       });
 
-    for (const layout of entries) {
-      const { connection, p1, p2, normalX, normalY } = layout;
-      const { width, height } = connectionLabelSize(connection);
-      const tCandidates = [0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78];
-      const sideSeed = String(connection.id)
-        .split("")
-        .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-      const preferredSide = sideSeed % 2 === 0 ? 1 : -1;
-      const offsetCandidates = [
-        46 * preferredSide,
-        -46 * preferredSide,
-        80 * preferredSide,
-        -80 * preferredSide,
-        116 * preferredSide,
-        -116 * preferredSide,
-        152 * preferredSide,
-        -152 * preferredSide,
-        0,
-      ];
+    const tCandidates = [];
+    for (let step = 0; step <= 10; step += 1) {
+      if (step === 0) {
+        tCandidates.push(0.5);
+        continue;
+      }
+      const delta = step * 0.035;
+      if (0.5 - delta >= 0.12) tCandidates.push(0.5 - delta);
+      if (0.5 + delta <= 0.88) tCandidates.push(0.5 + delta);
+    }
 
+    for (const layout of entries) {
+      const { connection, p1, p2 } = layout;
+      const { width, height } = connectionLabelSize(connection);
       let best = null;
 
       for (const t of tCandidates) {
-        const anchorX = p1.x + (p2.x - p1.x) * t;
-        const anchorY = p1.y + (p2.y - p1.y) * t;
+        const x = p1.x + (p2.x - p1.x) * t;
+        const y = p1.y + (p2.y - p1.y) * t;
+        const box = {
+          left: x - width / 2,
+          top: y - height / 2,
+          right: x + width / 2,
+          bottom: y + height / 2,
+        };
 
-        for (const normalOffset of offsetCandidates) {
-          const x = anchorX + normalX * normalOffset;
-          const y = anchorY + normalY * normalOffset;
-          const box = {
-            left: x - width / 2,
-            top: y - height / 2,
-            right: x + width / 2,
-            bottom: y + height / 2,
-          };
+        let score = Math.abs(t - 0.5) * 900;
 
-          let score = Math.abs(t - 0.5) * 260 + Math.abs(normalOffset) * 0.18;
+        if (
+          box.left < 8 ||
+          box.top < 8 ||
+          box.right > WORLD_W - 8 ||
+          box.bottom > WORLD_H - 8
+        ) {
+          score += 1000000;
+        }
 
-          if (
-            box.left < 8 ||
-            box.top < 8 ||
-            box.right > WORLD_W - 8 ||
-            box.bottom > WORLD_H - 8
-          ) {
-            score += 1000000;
-          }
+        for (const placed of placedBoxes) {
+          if (boxesOverlap(box, placed, 12)) score += 1000000;
+        }
 
-          for (const placed of placedBoxes) {
-            if (boxesOverlap(box, placed, 12)) score += 1000000;
-          }
+        for (const itemBox of itemBoxes) {
+          if (boxesOverlap(box, itemBox, 4)) score += 220000;
+        }
 
-          for (const itemBox of itemBoxes) {
-            if (boxesOverlap(box, itemBox, 4)) score += 120000;
-          }
+        const padded = {
+          left: box.left - 7,
+          top: box.top - 7,
+          right: box.right + 7,
+          bottom: box.bottom + 7,
+        };
 
-          for (const otherLayout of lineLayouts) {
-            if (otherLayout.connection.id === connection.id) continue;
-            const padded = {
-              left: box.left - 8,
-              top: box.top - 8,
-              right: box.right + 8,
-              bottom: box.bottom + 8,
-            };
-            if (segmentIntersectsBox(otherLayout.p1, otherLayout.p2, padded)) {
-              score += 12000;
-            }
-          }
-
-          const ownPadded = {
-            left: box.left - 6,
-            top: box.top - 6,
-            right: box.right + 6,
-            bottom: box.bottom + 6,
-          };
-          if (segmentIntersectsBox(p1, p2, ownPadded)) score += 25000;
-
-          if (!best || score < best.score) {
-            best = { x, y, width, height, box, score };
+        for (const otherLayout of lineLayouts) {
+          if (otherLayout.connection.id === connection.id) continue;
+          if (segmentIntersectsBox(otherLayout.p1, otherLayout.p2, padded)) {
+            score += 180000;
           }
         }
+
+        if (!best || score < best.score) {
+          best = { x, y, width, height, box, score, t };
+        }
+
+        if (score < 1000) break;
       }
 
       if (!best) {
-        const x = (p1.x + p2.x) / 2 + normalX * 46;
-        const y = (p1.y + p2.y) / 2 + normalY * 46;
+        const x = (p1.x + p2.x) / 2;
+        const y = (p1.y + p2.y) / 2;
         best = {
           x,
           y,
@@ -1008,6 +992,7 @@
             bottom: y + height / 2,
           },
           score: 0,
+          t: 0.5,
         };
       }
 
