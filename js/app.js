@@ -786,7 +786,13 @@
         siblings.findIndex((entry) => entry.id === connection.id),
       );
       const parallelGap = 34;
-      const offset = (siblingIndex - (siblings.length - 1) / 2) * parallelGap;
+      const laneIndex =
+        siblingIndex === 0
+          ? 0
+          : siblingIndex % 2 === 1
+            ? Math.ceil(siblingIndex / 2)
+            : -Math.ceil(siblingIndex / 2);
+      const offset = laneIndex * parallelGap;
       const p1 = {
         x: baseP1.x + normalX * offset,
         y: baseP1.y + normalY * offset,
@@ -898,9 +904,10 @@
     const entries = lineLayouts
       .filter((layout) => String(layout.connection.label || "").trim())
       .sort((a, b) => {
-        const aLength = String(a.connection.label || "").length;
-        const bLength = String(b.connection.label || "").length;
-        if (aLength !== bLength) return bLength - aLength;
+        const timeCompare = String(a.connection.createdAt || "").localeCompare(
+          String(b.connection.createdAt || ""),
+        );
+        if (timeCompare !== 0) return timeCompare;
         return String(a.connection.id).localeCompare(String(b.connection.id));
       });
 
