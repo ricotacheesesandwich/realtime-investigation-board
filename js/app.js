@@ -777,12 +777,21 @@
         if (used.has(connection.id)) continue;
 
         let partner = null;
-        if (!connectionIsSecret(connection)) {
+        const secretState = connectionIsSecret(connection);
+        const authorId = String(
+          connection.authorId || connection.authorName || "",
+        ).toUpperCase();
+        const reciprocalAuthorId =
+          authorId === "HO1" ? "HO2" : authorId === "HO2" ? "HO1" : "";
+
+        if (reciprocalAuthorId) {
           partner = sorted.find(
             (other) =>
               !used.has(other.id) &&
               other.id !== connection.id &&
-              !connectionIsSecret(other) &&
+              String(other.authorId || other.authorName || "").toUpperCase() ===
+                reciprocalAuthorId &&
+              connectionIsSecret(other) === secretState &&
               String(other.from) === String(connection.to) &&
               String(other.to) === String(connection.from),
           );
