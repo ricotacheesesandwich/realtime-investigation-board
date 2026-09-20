@@ -694,6 +694,50 @@
     );
   }
 
+  const CONNECTION_THEMES = {
+    SYSTEAM: {
+      line: "#9d2020",
+      label: "#7f1e1e",
+      background: "rgba(255, 249, 246, 0.97)",
+      border: "rgba(157, 32, 32, 0.38)",
+      name: "붉은색",
+    },
+    HO1: {
+      line: "#d5a400",
+      label: "#806300",
+      background: "rgba(255, 251, 232, 0.98)",
+      border: "rgba(213, 164, 0, 0.46)",
+      name: "노란색",
+    },
+    HO2: {
+      line: "#d85f89",
+      label: "#a83d63",
+      background: "rgba(255, 244, 248, 0.98)",
+      border: "rgba(216, 95, 137, 0.44)",
+      name: "분홍색",
+    },
+    SECRET: {
+      line: "#245f9e",
+      label: "#1d568f",
+      background: "rgba(247, 251, 255, 0.98)",
+      border: "rgba(36, 95, 158, 0.42)",
+      name: "푸른색",
+    },
+  };
+
+  function connectionTheme(connection) {
+    if (connectionIsSecret(connection)) return CONNECTION_THEMES.SECRET;
+    const authorKey = String(
+      connection?.authorId || connection?.authorName || "SYSTEAM",
+    ).toUpperCase();
+    return CONNECTION_THEMES[authorKey] || CONNECTION_THEMES.SYSTEAM;
+  }
+
+  function connectionThemeStyle(connection) {
+    const theme = connectionTheme(connection);
+    return `--connection-color:${theme.line};--connection-label-color:${theme.label};--connection-label-bg:${theme.background};--connection-label-border:${theme.border};`;
+  }
+
   function connectionPairKey(connection) {
     return [String(connection.from), String(connection.to)].sort().join("::");
   }
@@ -811,7 +855,8 @@
           42 + String(connection.label || "").length * 11,
         );
         const id = esc(connection.id);
-        return `<g class="connection-group${selectedClass}" data-connection-id="${id}"><line class="connection-hit" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg${secretClass}" data-connection-id="${id}" x="${mx - labelWidth / 2}" y="${my - 15}" width="${labelWidth}" height="30" rx="9"/><text class="connection-label${secretClass}" data-connection-id="${id}" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
+        const themeStyle = esc(connectionThemeStyle(connection));
+        return `<g class="connection-group${selectedClass}" data-connection-id="${id}" style="${themeStyle}"><line class="connection-hit" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg${secretClass}" data-connection-id="${id}" x="${mx - labelWidth / 2}" y="${my - 15}" width="${labelWidth}" height="30" rx="9"/><text class="connection-label${secretClass}" data-connection-id="${id}" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
       })
       .join("");
   }
@@ -1083,7 +1128,15 @@
       connection?.authorName || session?.name || session?.accountId || "";
     const canEdit = !editing || canDeleteConnection(connection);
     const privacyDisabled = canEdit ? "" : "disabled";
-    return `<h2>${editing ? "연결선 수정" : "연결 설정"}</h2><p class="modal-lead">연결 문구를 적고 공개선 또는 비밀선을 선택하세요. 같은 두 항목 사이에도 공개선과 비밀선을 각각 따로 만들 수 있습니다. 비밀선은 작성자와 SYSTEAM에게만 보입니다.</p><div class="connection-modal-meta"><span>${esc(String(fromLabel).slice(0, 32))}</span><span>→</span><span>${esc(String(toLabel).slice(0, 32))}</span>${editing ? `<span>· ${esc(owner)}</span>` : ""}</div><form id="connectionForm" class="form-stack"><input type="hidden" name="mode" value="${editing ? "edit" : "create"}"><input type="hidden" name="connectionId" value="${esc(connection?.id || "")}"><input type="hidden" name="fromId" value="${esc(connection?.from || fromId)}"><input type="hidden" name="toId" value="${esc(connection?.to || toId)}"><div class="form-field"><label>연결 문구</label><input name="label" maxlength="60" placeholder="예: 동기, 절친 / 동일 인물 / 시간대 일치" value="${esc(connection?.label || "")}" ${canEdit ? "" : "disabled"}></div><div class="form-field"><label>연결선 공개 범위</label><div class="connection-choice-grid"><label class="connection-choice connection-choice--public"><input type="radio" name="privacy" value="public" ${secret ? "" : "checked"} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>붉은 공개선</strong><small>HO1, HO2, SYSTEAM 모두에게 선과 문구가 보입니다.</small></span></label><label class="connection-choice connection-choice--secret"><input type="radio" name="privacy" value="secret" ${secret ? "checked" : ""} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>푸른 비밀선</strong><small>작성자 본인과 SYSTEAM만 선과 문구를 볼 수 있습니다.</small></span></label></div></div><div class="form-actions">${editing && canEdit ? `<button class="connection-secondary-btn" type="button" data-add-parallel-connection>같은 관계에 새 선 추가</button><button class="connection-delete-btn" type="button" data-delete-connection-modal>연결선 삭제</button>` : ""}<button class="cancel-btn" type="button" data-close-modal>취소</button>${canEdit ? `<button class="submit-btn" type="submit">${editing ? "수정 저장" : "연결 만들기"}</button>` : ""}</div></form>`;
+    const publicTheme = connectionTheme({
+      authorId: connection?.authorId || session?.accountId,
+      authorName: connection?.authorName || session?.name,
+      secret: false,
+      visibility: "public",
+      color: "public",
+    });
+    const publicChoiceStyle = `--choice-color:${publicTheme.line};--choice-bg:${publicTheme.background};`;
+    return `<h2>${editing ? "연결선 수정" : "연결 설정"}</h2><p class="modal-lead">연결 문구를 적고 공개선 또는 비밀선을 선택하세요. 같은 두 항목 사이에도 공개선과 비밀선을 각각 따로 만들 수 있습니다. 공개선은 작성자에 따라 SYSTEAM은 붉은색, HO1은 노란색, HO2는 분홍색으로 표시되고 비밀선은 항상 푸른색입니다.</p><div class="connection-modal-meta"><span>${esc(String(fromLabel).slice(0, 32))}</span><span>→</span><span>${esc(String(toLabel).slice(0, 32))}</span>${editing ? `<span>· ${esc(owner)}</span>` : ""}</div><form id="connectionForm" class="form-stack"><input type="hidden" name="mode" value="${editing ? "edit" : "create"}"><input type="hidden" name="connectionId" value="${esc(connection?.id || "")}"><input type="hidden" name="fromId" value="${esc(connection?.from || fromId)}"><input type="hidden" name="toId" value="${esc(connection?.to || toId)}"><div class="form-field"><label>연결 문구</label><input name="label" maxlength="60" placeholder="예: 동기, 절친 / 동일 인물 / 시간대 일치" value="${esc(connection?.label || "")}" ${canEdit ? "" : "disabled"}></div><div class="form-field"><label>연결선 공개 범위</label><div class="connection-choice-grid"><label class="connection-choice connection-choice--public" style="${esc(publicChoiceStyle)}"><input type="radio" name="privacy" value="public" ${secret ? "" : "checked"} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>${esc(publicTheme.name)} 공개선</strong><small>HO1, HO2, SYSTEAM 모두에게 선과 문구가 보입니다.</small></span></label><label class="connection-choice connection-choice--secret"><input type="radio" name="privacy" value="secret" ${secret ? "checked" : ""} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>푸른 비밀선</strong><small>작성자 본인과 SYSTEAM만 선과 문구를 볼 수 있습니다.</small></span></label></div></div><div class="form-actions">${editing && canEdit ? `<button class="connection-secondary-btn" type="button" data-add-parallel-connection>같은 관계에 새 선 추가</button><button class="connection-delete-btn" type="button" data-delete-connection-modal>연결선 삭제</button>` : ""}<button class="cancel-btn" type="button" data-close-modal>취소</button>${canEdit ? `<button class="submit-btn" type="submit">${editing ? "수정 저장" : "연결 만들기"}</button>` : ""}</div></form>`;
   }
 
   function openConnectionCreateModal(
