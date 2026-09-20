@@ -698,28 +698,28 @@
     SYSTEAM: {
       line: "#9d2020",
       label: "#7f1e1e",
-      background: "rgba(255, 249, 246, 0.97)",
+      background: "#fff9f6",
       border: "rgba(157, 32, 32, 0.38)",
       name: "붉은색",
     },
     HO1: {
       line: "#d5a400",
       label: "#806300",
-      background: "rgba(255, 251, 232, 0.98)",
+      background: "#fffbe8",
       border: "rgba(213, 164, 0, 0.46)",
       name: "노란색",
     },
     HO2: {
       line: "#d85f89",
       label: "#a83d63",
-      background: "rgba(255, 244, 248, 0.98)",
+      background: "#fff4f8",
       border: "rgba(216, 95, 137, 0.44)",
       name: "분홍색",
     },
     SECRET: {
       line: "#245f9e",
       label: "#1d568f",
-      background: "rgba(247, 251, 255, 0.98)",
+      background: "#f7fbff",
       border: "rgba(36, 95, 158, 0.42)",
       name: "푸른색",
     },
@@ -800,11 +800,215 @@
         connection,
         p1,
         p2,
-        mx: (p1.x + p2.x) / 2,
-        my: (p1.y + p2.y) / 2,
+        dx: p2.x - p1.x,
+        dy: p2.y - p1.y,
+        length,
+        normalX,
+        normalY,
       });
     }
     return layouts;
+  }
+
+  function boxesOverlap(a, b, gap = 0) {
+    return !(
+      a.right + gap <= b.left ||
+      a.left >= b.right + gap ||
+      a.bottom + gap <= b.top ||
+      a.top >= b.bottom + gap
+    );
+  }
+
+  function pointInsideBox(point, box) {
+    return (
+      point.x >= box.left &&
+      point.x <= box.right &&
+      point.y >= box.top &&
+      point.y <= box.bottom
+    );
+  }
+
+  function segmentIntersectsSegment(a1, a2, b1, b2) {
+    const cross = (p, q, r) =>
+      (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    const onSegment = (p, q, r) =>
+      Math.min(p.x, r.x) <= q.x + 0.0001 &&
+      q.x <= Math.max(p.x, r.x) + 0.0001 &&
+      Math.min(p.y, r.y) <= q.y + 0.0001 &&
+      q.y <= Math.max(p.y, r.y) + 0.0001;
+
+    const d1 = cross(a1, a2, b1);
+    const d2 = cross(a1, a2, b2);
+    const d3 = cross(b1, b2, a1);
+    const d4 = cross(b1, b2, a2);
+
+    if (
+      ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+    ) {
+      return true;
+    }
+
+    if (Math.abs(d1) < 0.0001 && onSegment(a1, b1, a2)) return true;
+    if (Math.abs(d2) < 0.0001 && onSegment(a1, b2, a2)) return true;
+    if (Math.abs(d3) < 0.0001 && onSegment(b1, a1, b2)) return true;
+    if (Math.abs(d4) < 0.0001 && onSegment(b1, a2, b2)) return true;
+    return false;
+  }
+
+  function segmentIntersectsBox(p1, p2, box) {
+    if (pointInsideBox(p1, box) || pointInsideBox(p2, box)) return true;
+    const topLeft = { x: box.left, y: box.top };
+    const topRight = { x: box.right, y: box.top };
+    const bottomRight = { x: box.right, y: box.bottom };
+    const bottomLeft = { x: box.left, y: box.bottom };
+    return (
+      segmentIntersectsSegment(p1, p2, topLeft, topRight) ||
+      segmentIntersectsSegment(p1, p2, topRight, bottomRight) ||
+      segmentIntersectsSegment(p1, p2, bottomRight, bottomLeft) ||
+      segmentIntersectsSegment(p1, p2, bottomLeft, topLeft)
+    );
+  }
+
+  function connectionLabelSize(connection) {
+    const label = String(connection.label || "");
+    return {
+      width: Math.min(250, Math.max(84, 42 + label.length * 11)),
+      height: 34,
+    };
+  }
+
+  function connectionItemBoxes() {
+    return state.items.map((item) => {
+      const geometry = itemGeometry(item);
+      return {
+        left: geometry.x - 12,
+        top: geometry.y - 12,
+        right: geometry.x + geometry.w + 12,
+        bottom: geometry.y + geometry.h + 12,
+      };
+    });
+  }
+
+  function buildConnectionLabelLayouts(layouts) {
+    const labelLayouts = new Map();
+    const placedBoxes = [];
+    const itemBoxes = connectionItemBoxes();
+    const lineLayouts = [...layouts.values()];
+    const entries = lineLayouts
+      .filter((layout) => String(layout.connection.label || "").trim())
+      .sort((a, b) => {
+        const aLength = String(a.connection.label || "").length;
+        const bLength = String(b.connection.label || "").length;
+        if (aLength !== bLength) return bLength - aLength;
+        return String(a.connection.id).localeCompare(String(b.connection.id));
+      });
+
+    for (const layout of entries) {
+      const { connection, p1, p2, normalX, normalY } = layout;
+      const { width, height } = connectionLabelSize(connection);
+      const tCandidates = [0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78];
+      const sideSeed = String(connection.id)
+        .split("")
+        .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+      const preferredSide = sideSeed % 2 === 0 ? 1 : -1;
+      const offsetCandidates = [
+        46 * preferredSide,
+        -46 * preferredSide,
+        80 * preferredSide,
+        -80 * preferredSide,
+        116 * preferredSide,
+        -116 * preferredSide,
+        152 * preferredSide,
+        -152 * preferredSide,
+        0,
+      ];
+
+      let best = null;
+
+      for (const t of tCandidates) {
+        const anchorX = p1.x + (p2.x - p1.x) * t;
+        const anchorY = p1.y + (p2.y - p1.y) * t;
+
+        for (const normalOffset of offsetCandidates) {
+          const x = anchorX + normalX * normalOffset;
+          const y = anchorY + normalY * normalOffset;
+          const box = {
+            left: x - width / 2,
+            top: y - height / 2,
+            right: x + width / 2,
+            bottom: y + height / 2,
+          };
+
+          let score = Math.abs(t - 0.5) * 260 + Math.abs(normalOffset) * 0.18;
+
+          if (
+            box.left < 8 ||
+            box.top < 8 ||
+            box.right > WORLD_W - 8 ||
+            box.bottom > WORLD_H - 8
+          ) {
+            score += 1000000;
+          }
+
+          for (const placed of placedBoxes) {
+            if (boxesOverlap(box, placed, 12)) score += 1000000;
+          }
+
+          for (const itemBox of itemBoxes) {
+            if (boxesOverlap(box, itemBox, 4)) score += 120000;
+          }
+
+          for (const otherLayout of lineLayouts) {
+            if (otherLayout.connection.id === connection.id) continue;
+            const padded = {
+              left: box.left - 8,
+              top: box.top - 8,
+              right: box.right + 8,
+              bottom: box.bottom + 8,
+            };
+            if (segmentIntersectsBox(otherLayout.p1, otherLayout.p2, padded)) {
+              score += 12000;
+            }
+          }
+
+          const ownPadded = {
+            left: box.left - 6,
+            top: box.top - 6,
+            right: box.right + 6,
+            bottom: box.bottom + 6,
+          };
+          if (segmentIntersectsBox(p1, p2, ownPadded)) score += 25000;
+
+          if (!best || score < best.score) {
+            best = { x, y, width, height, box, score };
+          }
+        }
+      }
+
+      if (!best) {
+        const x = (p1.x + p2.x) / 2 + normalX * 46;
+        const y = (p1.y + p2.y) / 2 + normalY * 46;
+        best = {
+          x,
+          y,
+          width,
+          height,
+          box: {
+            left: x - width / 2,
+            top: y - height / 2,
+            right: x + width / 2,
+            bottom: y + height / 2,
+          },
+          score: 0,
+        };
+      }
+
+      placedBoxes.push(best.box);
+      labelLayouts.set(connection.id, best);
+    }
+
+    return labelLayouts;
   }
 
   function distanceToSegment(point, p1, p2) {
@@ -840,25 +1044,41 @@
 
   function renderConnections() {
     const layouts = buildConnectionLayouts();
-    elements.svg.innerHTML = state.connections
+    const labelLayouts = buildConnectionLabelLayouts(layouts);
+
+    const lineMarkup = state.connections
       .map((connection) => {
         const layout = layouts.get(connection.id);
         if (!layout) return "";
-        const { p1, p2, mx, my } = layout;
+        const { p1, p2 } = layout;
         const selectedClass =
           selected?.type === "connection" && selected.id === connection.id
             ? " is-selected"
             : "";
         const secretClass = connectionIsSecret(connection) ? " is-secret" : "";
-        const labelWidth = Math.min(
-          220,
-          42 + String(connection.label || "").length * 11,
-        );
         const id = esc(connection.id);
         const themeStyle = esc(connectionThemeStyle(connection));
-        return `<g class="connection-group${selectedClass}" data-connection-id="${id}" style="${themeStyle}"><line class="connection-hit" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg${secretClass}" data-connection-id="${id}" x="${mx - labelWidth / 2}" y="${my - 15}" width="${labelWidth}" height="30" rx="9"/><text class="connection-label${secretClass}" data-connection-id="${id}" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
+        return `<g class="connection-group${selectedClass}" data-connection-id="${id}" style="${themeStyle}"><line class="connection-hit" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p2.x}" cy="${p2.y}" r="4"/></g>`;
       })
       .join("");
+
+    const labelMarkup = state.connections
+      .map((connection) => {
+        if (!connection.label) return "";
+        const labelLayout = labelLayouts.get(connection.id);
+        if (!labelLayout) return "";
+        const selectedClass =
+          selected?.type === "connection" && selected.id === connection.id
+            ? " is-selected"
+            : "";
+        const secretClass = connectionIsSecret(connection) ? " is-secret" : "";
+        const id = esc(connection.id);
+        const themeStyle = esc(connectionThemeStyle(connection));
+        return `<g class="connection-label-group${selectedClass}" data-connection-id="${id}" style="${themeStyle}"><rect class="connection-label-bg${secretClass}" data-connection-id="${id}" x="${labelLayout.x - labelLayout.width / 2}" y="${labelLayout.y - labelLayout.height / 2}" width="${labelLayout.width}" height="${labelLayout.height}" rx="10"/><text class="connection-label${secretClass}" data-connection-id="${id}" x="${labelLayout.x}" y="${labelLayout.y}">${esc(connection.label)}</text></g>`;
+      })
+      .join("");
+
+    elements.svg.innerHTML = `<g class="connection-lines-root">${lineMarkup}</g><g class="connection-labels-root">${labelMarkup}</g>`;
   }
 
   async function resolveAttachmentUrl(itemOrData) {
@@ -1069,6 +1289,13 @@
     elements.modalBackdrop.classList.add("is-hidden");
     elements.modal.innerHTML = "";
     pendingConnection = null;
+
+    if (selected?.type === "connection") {
+      selected = null;
+      selectedIds.clear();
+      renderConnections();
+      renderSelectionPanel();
+    }
   }
 
   function canUseSecretPosts() {
@@ -2463,8 +2690,8 @@
     }
     if (event.target.closest("[data-delete-connection-modal]")) {
       if (selected?.type !== "connection") return;
-      closeModal();
       await deleteSelected();
+      closeModal();
       return;
     }
     if (event.target.closest("[data-back-player-manager]")) {

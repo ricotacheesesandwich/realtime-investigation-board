@@ -1592,3 +1592,22 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.connection-labels-root {
+  pointer-events: none;
+}
+.connection-label-group {
+  pointer-events: none;
+}
+.connection-label-group .connection-label-bg,
+.connection-label-group .connection-label {
+  pointer-events: all;
+}
+.connection-label-bg,
+.connection-label-bg.is-secret {
+  fill-opacity: 1;
+  stroke-width: 1.25;
+}
+.connection-label {
+  font-size: 14px;
+}
