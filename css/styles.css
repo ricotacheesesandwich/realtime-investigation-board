@@ -222,7 +222,7 @@ button {
 }
 .connections-layer {
   overflow: visible;
-  pointer-events: auto;
+  pointer-events: none;
   z-index: 1;
 }
 .items-layer {
@@ -233,19 +233,24 @@ button {
   pointer-events: auto;
 }
 .connection-group {
-  pointer-events: all;
+  pointer-events: none;
 }
 .connection-hit {
   pointer-events: stroke;
-  stroke: rgba(0, 0, 0, 0.001);
-  stroke-width: 40;
+  stroke: #000;
+  stroke-opacity: 0;
+  stroke-width: 44;
   cursor: pointer;
 }
-.connection-line,
+.connection-line {
+  pointer-events: stroke;
+  cursor: pointer;
+}
 .connection-end,
 .connection-label-bg,
 .connection-label {
-  pointer-events: none;
+  pointer-events: all;
+  cursor: pointer;
 }
 .connection-hit:hover + .connection-line {
   stroke-width: 5;
@@ -1578,6 +1583,20 @@ button {
   color: #777168;
   font-size: 11px;
 }
+.connection-secondary-btn {
+  border: 1px solid #c9c3bb;
+  border-radius: 10px;
+  background: #fff;
+  color: #302d29;
+  padding: 11px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.connection-secondary-btn:hover {
+  border-color: #8d867d;
+  background: #f8f6f2;
+}
+
 .connection-delete-btn {
   margin-right: auto;
   background: #fff0ef;

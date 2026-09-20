@@ -686,11 +686,19 @@
     return { x: geometry.x + geometry.w / 2, y: geometry.y + geometry.h / 2 };
   }
 
+  function connectionIsSecret(connection) {
+    return Boolean(
+      connection?.secret === true ||
+      String(connection?.visibility || "").toLowerCase() === "secret" ||
+      String(connection?.color || "").toLowerCase() === "blue",
+    );
+  }
+
   function connectionPairKey(connection) {
     return [String(connection.from), String(connection.to)].sort().join("::");
   }
 
-  function renderConnections() {
+  function buildConnectionLayouts() {
     const itemsById = new Map(state.items.map((item) => [item.id, item]));
     const pairGroups = new Map();
 
@@ -702,9 +710,9 @@
 
     for (const connections of pairGroups.values()) {
       connections.sort((a, b) => {
-        const secretCompare =
-          Number(Boolean(a.secret)) - Number(Boolean(b.secret));
-        if (secretCompare !== 0) return secretCompare;
+        const privacyCompare =
+          Number(connectionIsSecret(a)) - Number(connectionIsSecret(b));
+        if (privacyCompare !== 0) return privacyCompare;
         const timeCompare = String(a.createdAt || "").localeCompare(
           String(b.createdAt || ""),
         );
@@ -713,50 +721,97 @@
       });
     }
 
+    const layouts = new Map();
+    for (const connection of state.connections) {
+      const from = itemsById.get(connection.from);
+      const to = itemsById.get(connection.to);
+      if (!from || !to) continue;
+
+      const baseP1 = itemCenter(from);
+      const baseP2 = itemCenter(to);
+      const dx = baseP2.x - baseP1.x;
+      const dy = baseP2.y - baseP1.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const normalX = -dy / length;
+      const normalY = dx / length;
+      const siblings = pairGroups.get(connectionPairKey(connection)) || [
+        connection,
+      ];
+      const siblingIndex = Math.max(
+        0,
+        siblings.findIndex((entry) => entry.id === connection.id),
+      );
+      const parallelGap = 34;
+      const offset = (siblingIndex - (siblings.length - 1) / 2) * parallelGap;
+      const p1 = {
+        x: baseP1.x + normalX * offset,
+        y: baseP1.y + normalY * offset,
+      };
+      const p2 = {
+        x: baseP2.x + normalX * offset,
+        y: baseP2.y + normalY * offset,
+      };
+
+      layouts.set(connection.id, {
+        connection,
+        p1,
+        p2,
+        mx: (p1.x + p2.x) / 2,
+        my: (p1.y + p2.y) / 2,
+      });
+    }
+    return layouts;
+  }
+
+  function distanceToSegment(point, p1, p2) {
+    const vx = p2.x - p1.x;
+    const vy = p2.y - p1.y;
+    const wx = point.x - p1.x;
+    const wy = point.y - p1.y;
+    const lengthSquared = vx * vx + vy * vy;
+    if (!lengthSquared) return Math.hypot(point.x - p1.x, point.y - p1.y);
+    const t = clamp((wx * vx + wy * vy) / lengthSquared, 0, 1);
+    const px = p1.x + t * vx;
+    const py = p1.y + t * vy;
+    return Math.hypot(point.x - px, point.y - py);
+  }
+
+  function findConnectionAtClientPoint(clientX, clientY) {
+    if (!state.connections.length) return null;
+    const point = worldPoint(clientX, clientY);
+    const layouts = buildConnectionLayouts();
+    const threshold = 18 / Math.max(pan.scale, 0.25);
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const layout of layouts.values()) {
+      const distance = distanceToSegment(point, layout.p1, layout.p2);
+      if (distance <= threshold && distance < nearestDistance) {
+        nearest = layout.connection;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  }
+
+  function renderConnections() {
+    const layouts = buildConnectionLayouts();
     elements.svg.innerHTML = state.connections
       .map((connection) => {
-        const from = itemsById.get(connection.from);
-        const to = itemsById.get(connection.to);
-        if (!from || !to) return "";
-
-        const baseP1 = itemCenter(from);
-        const baseP2 = itemCenter(to);
-        const dx = baseP2.x - baseP1.x;
-        const dy = baseP2.y - baseP1.y;
-        const length = Math.hypot(dx, dy) || 1;
-        const normalX = -dy / length;
-        const normalY = dx / length;
-
-        const siblings = pairGroups.get(connectionPairKey(connection)) || [
-          connection,
-        ];
-        const siblingIndex = Math.max(
-          0,
-          siblings.findIndex((entry) => entry.id === connection.id),
-        );
-        const parallelGap = 22;
-        const offset = (siblingIndex - (siblings.length - 1) / 2) * parallelGap;
-
-        const p1 = {
-          x: baseP1.x + normalX * offset,
-          y: baseP1.y + normalY * offset,
-        };
-        const p2 = {
-          x: baseP2.x + normalX * offset,
-          y: baseP2.y + normalY * offset,
-        };
-        const mx = (p1.x + p2.x) / 2;
-        const my = (p1.y + p2.y) / 2;
+        const layout = layouts.get(connection.id);
+        if (!layout) return "";
+        const { p1, p2, mx, my } = layout;
         const selectedClass =
           selected?.type === "connection" && selected.id === connection.id
             ? " is-selected"
             : "";
-        const secretClass = connection.secret === true ? " is-secret" : "";
+        const secretClass = connectionIsSecret(connection) ? " is-secret" : "";
         const labelWidth = Math.min(
-          200,
-          34 + String(connection.label || "").length * 11,
+          220,
+          42 + String(connection.label || "").length * 11,
         );
-        return `<g class="connection-group" data-connection-id="${esc(connection.id)}"><line class="connection-hit" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg${secretClass}" x="${mx - labelWidth / 2}" y="${my - 13}" width="${labelWidth}" height="26" rx="8"/><text class="connection-label${secretClass}" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
+        const id = esc(connection.id);
+        return `<g class="connection-group${selectedClass}" data-connection-id="${id}"><line class="connection-hit" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><line class="connection-line${secretClass}${selectedClass}" data-connection-id="${id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p1.x}" cy="${p1.y}" r="4"/><circle class="connection-end${secretClass}" data-connection-id="${id}" cx="${p2.x}" cy="${p2.y}" r="4"/>${connection.label ? `<rect class="connection-label-bg${secretClass}" data-connection-id="${id}" x="${mx - labelWidth / 2}" y="${my - 15}" width="${labelWidth}" height="30" rx="9"/><text class="connection-label${secretClass}" data-connection-id="${id}" x="${mx}" y="${my}">${esc(connection.label)}</text>` : ""}</g>`;
       })
       .join("");
   }
@@ -853,7 +908,7 @@
         return;
       }
       const editable = canDeleteConnection(connection);
-      const isSecretConnection = connection.secret === true;
+      const isSecretConnection = connectionIsSecret(connection);
       const connectionKicker = isSecretConnection
         ? `<p class="panel-kicker blue-kicker">SECRET CONNECTION</p>`
         : `<p class="panel-kicker red-kicker">RED CONNECTION</p>`;
@@ -1009,9 +1064,12 @@
     connection = null,
     fromId = "",
     toId = "",
+    defaultSecret = false,
   } = {}) {
     const editing = Boolean(connection);
-    const secret = connection?.secret === true;
+    const secret = editing
+      ? connectionIsSecret(connection)
+      : Boolean(defaultSecret);
     const fromItem = state.items.find(
       (item) => item.id === (connection?.from || fromId),
     );
@@ -1025,12 +1083,16 @@
       connection?.authorName || session?.name || session?.accountId || "";
     const canEdit = !editing || canDeleteConnection(connection);
     const privacyDisabled = canEdit ? "" : "disabled";
-    return `<h2>${editing ? "연결선 수정" : "연결 설정"}</h2><p class="modal-lead">연결 문구를 적고 공개선 또는 비밀선을 선택하세요. 같은 두 항목 사이에도 공개선과 비밀선을 각각 따로 만들 수 있습니다. 비밀선은 작성자와 SYSTEAM에게만 보입니다.</p><div class="connection-modal-meta"><span>${esc(String(fromLabel).slice(0, 32))}</span><span>→</span><span>${esc(String(toLabel).slice(0, 32))}</span>${editing ? `<span>· ${esc(owner)}</span>` : ""}</div><form id="connectionForm" class="form-stack"><input type="hidden" name="mode" value="${editing ? "edit" : "create"}"><input type="hidden" name="connectionId" value="${esc(connection?.id || "")}"><input type="hidden" name="fromId" value="${esc(connection?.from || fromId)}"><input type="hidden" name="toId" value="${esc(connection?.to || toId)}"><div class="form-field"><label>연결 문구</label><input name="label" maxlength="60" placeholder="예: 동기, 절친 / 동일 인물 / 시간대 일치" value="${esc(connection?.label || "")}" ${canEdit ? "" : "disabled"}></div><div class="form-field"><label>연결선 공개 범위</label><div class="connection-choice-grid"><label class="connection-choice connection-choice--public"><input type="radio" name="privacy" value="public" ${secret ? "" : "checked"} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>붉은 공개선</strong><small>HO1, HO2, SYSTEAM 모두에게 선과 문구가 보입니다.</small></span></label><label class="connection-choice connection-choice--secret"><input type="radio" name="privacy" value="secret" ${secret ? "checked" : ""} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>푸른 비밀선</strong><small>작성자 본인과 SYSTEAM만 선과 문구를 볼 수 있습니다.</small></span></label></div></div><div class="form-actions">${editing && canEdit ? `<button class="connection-delete-btn" type="button" data-delete-connection-modal>연결선 삭제</button>` : ""}<button class="cancel-btn" type="button" data-close-modal>취소</button>${canEdit ? `<button class="submit-btn" type="submit">${editing ? "수정 저장" : "연결 만들기"}</button>` : ""}</div></form>`;
+    return `<h2>${editing ? "연결선 수정" : "연결 설정"}</h2><p class="modal-lead">연결 문구를 적고 공개선 또는 비밀선을 선택하세요. 같은 두 항목 사이에도 공개선과 비밀선을 각각 따로 만들 수 있습니다. 비밀선은 작성자와 SYSTEAM에게만 보입니다.</p><div class="connection-modal-meta"><span>${esc(String(fromLabel).slice(0, 32))}</span><span>→</span><span>${esc(String(toLabel).slice(0, 32))}</span>${editing ? `<span>· ${esc(owner)}</span>` : ""}</div><form id="connectionForm" class="form-stack"><input type="hidden" name="mode" value="${editing ? "edit" : "create"}"><input type="hidden" name="connectionId" value="${esc(connection?.id || "")}"><input type="hidden" name="fromId" value="${esc(connection?.from || fromId)}"><input type="hidden" name="toId" value="${esc(connection?.to || toId)}"><div class="form-field"><label>연결 문구</label><input name="label" maxlength="60" placeholder="예: 동기, 절친 / 동일 인물 / 시간대 일치" value="${esc(connection?.label || "")}" ${canEdit ? "" : "disabled"}></div><div class="form-field"><label>연결선 공개 범위</label><div class="connection-choice-grid"><label class="connection-choice connection-choice--public"><input type="radio" name="privacy" value="public" ${secret ? "" : "checked"} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>붉은 공개선</strong><small>HO1, HO2, SYSTEAM 모두에게 선과 문구가 보입니다.</small></span></label><label class="connection-choice connection-choice--secret"><input type="radio" name="privacy" value="secret" ${secret ? "checked" : ""} ${privacyDisabled}><span class="connection-choice-copy"><strong><i class="connection-choice-dot"></i>푸른 비밀선</strong><small>작성자 본인과 SYSTEAM만 선과 문구를 볼 수 있습니다.</small></span></label></div></div><div class="form-actions">${editing && canEdit ? `<button class="connection-secondary-btn" type="button" data-add-parallel-connection>같은 관계에 새 선 추가</button><button class="connection-delete-btn" type="button" data-delete-connection-modal>연결선 삭제</button>` : ""}<button class="cancel-btn" type="button" data-close-modal>취소</button>${canEdit ? `<button class="submit-btn" type="submit">${editing ? "수정 저장" : "연결 만들기"}</button>` : ""}</div></form>`;
   }
 
-  function openConnectionCreateModal(fromId, toId) {
+  function openConnectionCreateModal(
+    fromId,
+    toId,
+    { defaultSecret = false } = {},
+  ) {
     pendingConnection = { fromId, toId };
-    openModal(connectionFormMarkup({ fromId, toId }));
+    openModal(connectionFormMarkup({ fromId, toId, defaultSecret }));
   }
 
   function openConnectionEditModal(connectionId) {
@@ -1061,6 +1123,7 @@
       snapshot();
       connection.label = label;
       connection.secret = secret;
+      connection.visibility = secret ? "secret" : "public";
       connection.color = secret ? "blue" : "red";
       connection.updatedAt = nowIso();
       closeModal();
@@ -1078,6 +1141,7 @@
       to: toId,
       label,
       secret,
+      visibility: secret ? "secret" : "public",
       authorId: session.accountId,
       authorName: session.name,
       authorRole: session.role,
@@ -1658,7 +1722,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function beginMarquee(event) {
+  function beginMarquee(event, { connectionId = null } = {}) {
     const rect = elements.viewport.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -1670,6 +1734,7 @@
       currentY: y,
       base: event.shiftKey ? new Set(selectedIds) : new Set(),
       moved: false,
+      connectionId,
     };
     elements.selectionMarquee.classList.remove("is-hidden");
     elements.selectionMarquee.style.left = `${x}px`;
@@ -1723,11 +1788,22 @@
     if (!marquee) return;
     const moved = marquee.moved;
     const baseHadSelection = marquee.base.size > 0;
+    const connectionId = marquee.connectionId || null;
     marquee = null;
     elements.selectionMarquee.classList.add("is-hidden");
     try {
       elements.viewport.releasePointerCapture(event.pointerId);
     } catch {}
+
+    if (!moved && connectionId) {
+      selectedIds.clear();
+      selected = { type: "connection", id: connectionId };
+      updateSelectionClasses();
+      renderSelectionPanel();
+      openConnectionEditModal(connectionId);
+      return;
+    }
+
     if (!moved && !baseHadSelection) {
       selectedIds.clear();
       selected = null;
@@ -1993,27 +2069,6 @@
     await enterBoard();
   });
 
-  elements.svg.addEventListener(
-    "pointerdown",
-    (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const connectionElement = target?.closest("[data-connection-id]");
-      if (!connectionElement) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openConnectionEditModal(connectionElement.dataset.connectionId);
-    },
-    true,
-  );
-
-  elements.svg.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    const connectionElement = target?.closest("[data-connection-id]");
-    if (!connectionElement) return;
-    event.preventDefault();
-    event.stopPropagation();
-  });
-
   elements.viewport.addEventListener("pointerdown", (event) => {
     if (!currentSessionValid()) {
       enforceAccountStatus();
@@ -2024,6 +2079,10 @@
     const resizeHandle = target?.closest("[data-resize-item]") || null;
     const itemElement = target?.closest("[data-item-id]") || null;
     const connectionElement = target?.closest("[data-connection-id]") || null;
+    const hitConnection =
+      !itemElement && tool === "select"
+        ? findConnectionAtClientPoint(event.clientX, event.clientY)
+        : null;
 
     if (event.button === 1) {
       event.preventDefault();
@@ -2066,15 +2125,11 @@
       return;
     }
 
-    if (connectionElement) {
-      event.preventDefault();
-      openConnectionEditModal(connectionElement.dataset.connectionId);
-      return;
-    }
-
     if (!itemElement) {
       if (tool === "select") {
-        beginMarquee(event);
+        const connectionId =
+          connectionElement?.dataset.connectionId || hitConnection?.id || null;
+        beginMarquee(event, { connectionId });
       } else {
         selected = null;
         selectedIds.clear();
@@ -2249,6 +2304,7 @@
       connection.label = $("#connectionLabelInput").value.trim();
       if ($("#connectionSecretInput")) {
         connection.secret = $("#connectionSecretInput").checked;
+        connection.visibility = connection.secret ? "secret" : "public";
         connection.color = connection.secret ? "blue" : "red";
       }
       connection.updatedAt = nowIso();
@@ -2338,6 +2394,18 @@
   elements.modal.addEventListener("click", async (event) => {
     if (event.target.closest("[data-close-modal]")) {
       closeModal();
+      return;
+    }
+    if (event.target.closest("[data-add-parallel-connection]")) {
+      if (selected?.type !== "connection") return;
+      const sourceConnection = state.connections.find(
+        (entry) => entry.id === selected.id,
+      );
+      if (!sourceConnection) return;
+      const defaultSecret = !connectionIsSecret(sourceConnection);
+      openConnectionCreateModal(sourceConnection.from, sourceConnection.to, {
+        defaultSecret,
+      });
       return;
     }
     if (event.target.closest("[data-delete-connection-modal]")) {
